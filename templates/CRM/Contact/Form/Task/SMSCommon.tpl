@@ -9,7 +9,7 @@
 *}
 {*common template for compose sms*}
 
-{crmScript file=js/sms-counter/sms_counter.min.js region=html-header}
+{crmScript file=bower_components/sms-counter/sms_counter.min.js region=html-header}
 
 <div class="crm-accordion-wrapper crm-plaint_text_sms-accordion ">
 <div class="crm-accordion-header">
