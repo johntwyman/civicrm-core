@@ -91,6 +91,28 @@ return [
     'is_contact' => 0,
     'help_text' => NULL,
   ],
+  'civimail_unsubscribe_methods' => [
+    'group_name' => 'Mailing Preferences',
+    'group' => 'mailing',
+    'name' => 'civimail_unsubscribe_methods',
+    'type' => 'Array',
+    'quick_form_type' => 'Select',
+    'html_type' => 'Select',
+    'html_attributes' => [
+      'multiple' => 1,
+      'class' => 'crm-select2',
+    ],
+    'default' => version_compare(CRM_Utils_System::version(), '5.72', '<=') ? ['mailto'] : ['mailto', 'http', 'oneclick'],
+    'add' => '5.70',
+    'title' => ts('Unsubscribe Methods'),
+    'is_domain' => 1,
+    'is_contact' => 0,
+    'description' => ts("These methods will be offered to email clients for semi-automated unsubscribes. Support for each depends on the recipient's email client."),
+    'help_text' => NULL,
+    'pseudoconstant' => [
+      'callback' => 'CRM_Mailing_Service_ListUnsubscribe::getMethods',
+    ],
+  ],
   'replyTo' => [
     'group_name' => 'Mailing Preferences',
     'group' => 'mailing',
