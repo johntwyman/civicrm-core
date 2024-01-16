@@ -142,6 +142,7 @@ class ClassScanner {
     static::scanFolders($classes, $civicrmRoot, 'Civi/Test/ExampleData', '\\');
     static::scanFolders($classes, $civicrmRoot, 'CRM/*/WorkflowMessage', '_');
     static::scanFolders($classes, $civicrmRoot, 'CRM/*/Import', '_');
+    static::scanFolders($classes, $civicrmRoot, 'CRM/Mailing/Service', '_');
     static::scanFolders($classes, $civicrmRoot, 'Civi', '\\', ';\\\(Security|Test)\\\;');
 
     $cache->set($cacheKey, $classes, static::TTL);

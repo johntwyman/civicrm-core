@@ -48,7 +48,7 @@ class CRM_Mailing_Page_Unsubscribe extends CRM_Core_Page {
     $queueId = CRM_Utils_Request::retrieve('qid', 'Integer');
     $hash = CRM_Utils_Request::retrieve('h', 'String');
 
-    $q = CRM_Mailing_Event_BAO_MailingEventQueue::verify(NULL, $queueId, $hash);
+    $q = CRM_Mailing_Event_BAO_MailingEventQueue::verify($jobId, $queueId, $hash);
     if (!$q) {
       CRM_Utils_System::sendResponse(
         new \GuzzleHttp\Psr7\Response(400, [], ts("Invalid request: bad parameters"))

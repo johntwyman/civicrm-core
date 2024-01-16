@@ -251,7 +251,7 @@ class CRM_Mailing_MailingSystemTest extends CRM_Mailing_BaseMailingSystemTest {
    *   people from, thereby breaking the unsubscribe.
    *
    * @dataProvider multiLingual
-   *
+   * @group ornery
    */
   public function testGitLabIssue1108($isMultiLingual): void {
 

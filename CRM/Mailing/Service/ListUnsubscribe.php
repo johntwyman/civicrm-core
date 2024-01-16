@@ -51,12 +51,12 @@ class CRM_Mailing_Service_ListUnsubscribe extends \Civi\Core\Service\AutoService
       $listUnsubscribe[] = $params['List-Unsubscribe'];
     }
     if (array_intersect(['http', 'oneclick'], $methods)) {
-      $listUnsubscribe[] = '<' . Civi::url('civicrm/mailing/unsubscribe')->addQuery([
+      $listUnsubscribe[] = '<' . CRM_Utils_System::url('civicrm/mailing/unsubscribe', [
         'reset' => 1,
         'jid' => $m[1],
         'qid' => $m[2],
         'h' => $m[3],
-      ]) . '>';
+      ], TRUE, NULL, FALSE) . '>';
     }
 
     if (in_array('oneclick', $methods)) {

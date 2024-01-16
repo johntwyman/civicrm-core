@@ -60,7 +60,7 @@ abstract class CRM_Mailing_BaseMailingSystemTest extends CiviUnitTestCase {
   /**
    */
   public function tearDown(): void {
-    $this->revertSetting('civimail_unsubscribe_methods');
+    \Civi::settings()->revert('civimail_unsubscribe_methods');
     $this->_mut->stop();
     CRM_Utils_Hook::singleton()->reset();
     // DGW
@@ -120,13 +120,13 @@ abstract class CRM_Mailing_BaseMailingSystemTest extends CiviUnitTestCase {
 
       );
       $url = CRM_Utils_Array::first(preg_grep('/^http/', $urls));
-      $this->assertMatchesRegularExpression(';civicrm/mailing/unsubscribe;', $url);
+      $this->assertRegExp(';civicrm/mailing/unsubscribe;', $url);
 
       // Older clients (RFC 2369 only): Open a browser for the unsubscribe page
       // FIXME: This works locally, but in CI complains about ckeditor4. Smells like compatibility issue between LocalHttpClient and $unclear.
       $get = $client->sendRequest(new Request('GET', $url));
       $this->assertEquals(200, $get->getStatusCode());
-      $this->assertMatchesRegularExpression(';You are requesting to unsubscribe;', (string) $get->getBody());
+      $this->assertRegExp(';You are requesting to unsubscribe;', (string) $get->getBody());
 
       // Newer clients (RFC 8058): Send headless HTTP POST
       $post = $client->sendRequest(new Request('POST', $url, [], $message->headers['List-Unsubscribe-Post'][0]));
