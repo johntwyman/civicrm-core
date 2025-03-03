@@ -358,14 +358,16 @@ class CRM_Utils_Mail {
       }
     }
 
-    // quote FROM, if comma is detected AND is not already quoted. CRM-7053
-    if (str_contains($headers['From'], ',')) {
-      $from = explode(' <', $headers['From']);
-      $headers['From'] = self::formatRFC822Email(
-        $from[0],
-        substr(trim($from[1]), 0, -1),
-        TRUE
-      );
+    // quote FROM, REPLY-TO if comma is detected AND is not already quoted. CRM-7053
+    foreach (['From', 'Reply-To'] as $header) {
+      if (str_contains($headers[$header], ',')) {
+        $headerParts = explode(' <', $headers[$header]);
+        $headers[$header] = self::formatRFC822Email(
+          $headerParts[0],
+          substr(trim($headerParts[1]), 0, -1),
+          TRUE
+        );
+      }
     }
 
     require_once 'Mail/mime.php';
