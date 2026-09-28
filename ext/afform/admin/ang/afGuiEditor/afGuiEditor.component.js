@@ -1,5 +1,5 @@
 // https://civicrm.org/licensing
-(function(angular, $, _) {
+(function(angular, $) {
   "use strict";
 
   function backfillEntityDefaults(entity) {
@@ -66,7 +66,7 @@
           .filter((tag) => newIds.includes(tag.id))
           .map((tag) => tag.name)
           .sort();
-        if (!_.isEqual(names, (editor.afform.tags || []).slice().sort())) {
+        if (!angular.equals(names, (editor.afform.tags || []).slice().sort())) {
           editor.afform.tags = names;
         }
       });
@@ -250,9 +250,9 @@
         $scope.selectedEntityName = undoHistory[undoPosition].selectedEntityName;
       }
 
-      this.undo = _.wrap(1, changeHistory);
+      this.undo = () => changeHistory(1);
 
-      this.redo = _.wrap(-1, changeHistory);
+      this.redo = () => changeHistory(-1);
 
       this.isSaved = function() {
         return undoHistory[undoPosition].saved;
@@ -620,7 +620,16 @@
       // Gets complete field defn, merging values from the field with default values
       function fillFieldDefn(entityType, field) {
         const spec = structuredClone(afGui.getField(entityType, field.name));
-        return _.merge(spec, field.defn || {});
+        const defn = angular.merge(spec, field.defn || {});
+        const suffix = field.name.split(':')[1];
+        if (suffix) {
+          // restore suffix in returned defn
+          defn.name = field.name;
+          // transform options so the correct suffix is in the id slot
+          // (typically option names rather than values)
+          defn.options = defn.options.map((o) => Object.assign({}, o, {id: o[suffix]}));
+        }
+        return defn;
       }
 
       // Get all fields on the form for a particular entity
@@ -628,9 +637,7 @@
         const fieldsets = afGui.findRecursive(editor.layout['#children'], {'af-fieldset': entityName}),
           entityType = editor.getEntity(entityName).type,
           entityFields = {fields: [], joins: []},
-          isJoin = function (item) {
-            return _.isPlainObject(item) && ('af-join' in item);
-          };
+          isJoin = (item) => Boolean(item && item['af-join']);
         fieldsets.forEach((fieldset) => {
           afGui.getFormElements(fieldset['#children'], {'#tag': 'af-field'}, isJoin).forEach((field) => {
             if (field.name) {
@@ -1003,6 +1010,11 @@
               });
             }
             // Tokens from entity fields on the form
+            // TODO: if we have fields with options on the form
+            // the current token is gender_id or gender_id:name
+            // when for messages we probably want gender_id:label
+            // though that value won't be immediately available from
+            // the form submission, so we'd need to ensure it was fetched
             this.getEntityFields(entity.name).fields.forEach((field) => {
               entityTokens.push({
                 id: entity.name + '.0.' + field.name,
@@ -1031,4 +1043,4 @@
     }
   });
 
-})(angular, CRM.$, CRM._);
+})(angular, CRM.$);

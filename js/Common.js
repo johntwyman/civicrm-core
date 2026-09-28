@@ -340,6 +340,62 @@ if (!CRM.vars) CRM.vars = {};
   };
 
   /**
+   * Returns a function that postpones calling `fn` until `wait` milliseconds have gone by
+   * without another call. The postponed call gets the arguments and `this` of the most
+   * recent one.
+   *
+   * The returned function carries a `.cancel()` which drops any call still pending.
+   *
+   * @param {function} fn
+   * @param {int} wait milliseconds
+   * @param {object} [options]
+   *   leading: also call `fn` up front, when no wait is already in progress. Default false.
+   *   trailing: call `fn` once the wait elapses. Default true. With `leading` set as well,
+   *     the trailing call only happens if there was more than one call during the wait.
+   * @return {function}
+   */
+  CRM.utils.debounce = function(fn, wait, options) {
+    const leading = !!(options && options.leading),
+      trailing = !options || options.trailing !== false;
+    let timer = null,
+      lastArgs = null,
+      lastThis = null,
+      repeated = false;
+
+    const elapsed = () => {
+      timer = null;
+      if (trailing && (!leading || repeated)) {
+        fn.apply(lastThis, lastArgs);
+      }
+      repeated = false;
+      lastArgs = lastThis = null;
+    };
+
+    function debounced(...args) {
+      const starting = timer === null;
+      lastArgs = args;
+      lastThis = this;
+      if (!starting) {
+        repeated = true;
+        clearTimeout(timer);
+      }
+      timer = setTimeout(elapsed, wait);
+      if (leading && starting) {
+        fn.apply(this, args);
+      }
+    }
+
+    debounced.cancel = () => {
+      clearTimeout(timer);
+      timer = null;
+      repeated = false;
+      lastArgs = lastThis = null;
+    };
+
+    return debounced;
+  };
+
+  /**
    * Render an option list
    * @param options {array}
    * @param val {string} default value
@@ -349,7 +405,7 @@ if (!CRM.vars) CRM.vars = {};
   CRM.utils.renderOptions = function(options, val, escapeHtml) {
     var rendered = '',
       esc = escapeHtml === false ? (v) => v : CRM.utils.escapeHtml;
-    if (!$.isArray(val)) {
+    if (!Array.isArray(val)) {
       val = [val];
     }
     (options || []).forEach((option) => {
@@ -408,7 +464,8 @@ if (!CRM.vars) CRM.vars = {};
         initialValue = $(this).data('crm-initial-value'),
         currentValue = $(this).is(':checkbox, :radio') ? $(this).prop('checked') : $(this).val();
       // skip change of value for submit buttons
-      if (initialValue !== undefined && !_.isEqual(initialValue, currentValue)) {
+      // A multi-select yields a fresh array on every read, so the two are compared by content
+      if (initialValue !== undefined && JSON.stringify(initialValue) !== JSON.stringify(currentValue)) {
         isDirty = true;
       }
     });
@@ -604,9 +661,7 @@ if (!CRM.vars) CRM.vars = {};
       }
     };
 
-    return _.transform(staticItems || [], function(staticItems, option) {
-      staticItems.push(typeof option === 'string' ? staticPresets[option] : option);
-    });
+    return (staticItems || []).map((option) => typeof option === 'string' ? staticPresets[option] : option);
   }
 
   function renderQuickAddMarkup(quickAddLinks) {
@@ -743,7 +798,7 @@ if (!CRM.vars) CRM.vars = {};
         minimumInputLength: 1,
         formatResult: CRM.utils.formatSelect2Result,
         formatSelection: formatEntityRefSelection,
-        escapeMarkup: _.identity,
+        escapeMarkup: (markup) => markup,
         initSelection: function($el, callback) {
           var val = $el.val();
           if (val === '') {
@@ -885,7 +940,7 @@ if (!CRM.vars) CRM.vars = {};
         minimumInputLength: 1,
         formatResult: CRM.utils.formatSelect2Result,
         formatSelection: formatEntityRefSelection,
-        escapeMarkup: _.identity,
+        escapeMarkup: (markup) => markup,
         initSelection: function($el, callback) {
           var
             multiple = !!$el.data('select-params').multiple,
@@ -896,9 +951,13 @@ if (!CRM.vars) CRM.vars = {};
           }
           var storedIds = stored.map((item) => item.id);
           var idsNeeded = val.split(',').filter((id) => !storedIds.includes(id));
-          var existing = _.remove(stored, function(item) {
-            return val.split(',').includes(item.id);
-          });
+          var wanted = val.split(',');
+          var existing = stored.filter((item) => wanted.includes(item.id));
+          for (var pos = stored.length - 1; pos >= 0; pos--) {
+            if (wanted.includes(stored[pos].id)) {
+              stored.splice(pos, 1);
+            }
+          }
           // If we already have this data, just return it
           if (!idsNeeded.length) {
             callback(multiple ? existing : existing[0]);
@@ -934,8 +993,12 @@ if (!CRM.vars) CRM.vars = {};
                 if (val === "0") {
                   $el.select2('data', item, true);
                 }
-                else if ($.isArray(val) && $.inArray("0", val) > -1) {
-                  _.remove(data, {id: "0"});
+                else if (Array.isArray(val) && $.inArray("0", val) > -1) {
+                  for (var pos = data.length - 1; pos >= 0; pos--) {
+                    if (data[pos].id === "0") {
+                      data.splice(pos, 1);
+                    }
+                  }
                   data.push(item);
                   $el.select2('data', data, true);
                 }
@@ -1108,7 +1171,11 @@ if (!CRM.vars) CRM.vars = {};
       params = $.extend({params: {}}, $el.data('api-params') || {}).params,
       result = [];
     filters.forEach((filter) => {
-      _.defaults(filter, {type: 'select', 'attributes': {}, entity: entity});
+      Object.entries({type: 'select', 'attributes': {}, entity: entity}).forEach(([key, value]) => {
+        if (filter[key] === undefined) {
+          filter[key] = value;
+        }
+      });
       if (!params[filter.key]) {
         // Filter out options if params don't match its condition
         if (filter.condition && !_.isMatch(params, _.pick(filter.condition, Object.keys(params)))) {
@@ -1218,9 +1285,7 @@ if (!CRM.vars) CRM.vars = {};
     var values = structuredClone(filterSpec.options),
       params = $.extend({params: {}}, $el.data('api-params') || {}).params;
     if (fieldName === 'contact_type' && params.contact_type) {
-      values = _.remove(values, function(option) {
-        return option.key.indexOf(params.contact_type + '__') === 0;
-      });
+      values = values.filter((option) => option.key.startsWith(params.contact_type + '__'));
     }
     return values;
   }
@@ -1451,7 +1516,9 @@ if (!CRM.vars) CRM.vars = {};
     var ajax = typeof params !== 'string';
     if (helpDisplay && helpDisplay.close) {
       // If the same link is clicked twice, just close the display
-      if (helpDisplay.isOpen && _.isEqual(helpPrevious, params)) {
+      // `params` is a string, or a flat object the next line is about to structuredClone,
+      // so it always serialises, and both sides are built by the same caller
+      if (helpDisplay.isOpen && JSON.stringify(helpPrevious) === JSON.stringify(params)) {
         helpDisplay.close();
         return;
       }

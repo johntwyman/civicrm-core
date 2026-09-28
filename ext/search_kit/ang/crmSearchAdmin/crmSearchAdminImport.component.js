@@ -1,4 +1,4 @@
-(function(angular, $, _) {
+(function(angular, $) {
   "use strict";
 
   angular.module('crmSearchAdmin').component('crmSearchAdminImport', {
@@ -9,7 +9,7 @@
 
       this.values = '';
 
-      const checkInput = _.debounce(function() {
+      const checkInput = CRM.utils.debounce(function() {
         $scope.$apply(function() {
           if (!ctrl.values) {
             ctrl.checking = false;
@@ -31,7 +31,7 @@
             // Get count of existing matches for each import entity
             (apiCalls || []).forEach((apiCall) => {
               const entity = apiCall[0];
-              if (apiCall[1] !== 'save' || ('chain' in apiCall[2] && !_.isEmpty(apiCall[2].chain))) {
+              if (apiCall[1] !== 'save' || ('chain' in apiCall[2] && Object.keys(apiCall[2].chain).length)) {
                 throw ts('Unsupported API action: only "save" is allowed.');
               }
               if (!allowedEntities.includes(entity)) {
@@ -125,4 +125,4 @@
     }
   });
 
-})(angular, CRM.$, CRM._);
+})(angular, CRM.$);

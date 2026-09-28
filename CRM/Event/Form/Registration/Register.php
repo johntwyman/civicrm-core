@@ -47,22 +47,6 @@ class CRM_Event_Form_Registration_Register extends CRM_Event_Form_Registration {
   public $_paymentProcessorID;
 
   /**
-   * Show fee block or not.
-   *
-   * @var bool
-   *
-   * @deprecated
-   */
-  public $_noFees;
-
-  /**
-   * Fee Block.
-   *
-   * @var array
-   */
-  public $_feeBlock;
-
-  /**
    * Get the contact id for the registration.
    *
    * @param array $fields
@@ -125,7 +109,7 @@ class CRM_Event_Form_Registration_Register extends CRM_Event_Form_Registration {
     $eventFull = CRM_Event_BAO_Participant::eventFull($this->_eventId, FALSE, $this->_values['event']['has_waitlist'] ?? NULL);
 
     // Get payment processors if appropriate for this event
-    $this->_noFees = $suppressPayment = $this->isSuppressPayment();
+    $suppressPayment = $this->isSuppressPayment();
     $this->_paymentProcessors = $suppressPayment ? [] : $this->get('paymentProcessors');
     $this->assign('suppressPaymentBlock', $suppressPayment);
     $this->preProcessPaymentOptions();
@@ -199,7 +183,7 @@ class CRM_Event_Form_Registration_Register extends CRM_Event_Form_Registration {
     //if event is monetary and pay later is enabled and payment
     //processor is not available then freeze the pay later checkbox with
     //default check
-    if (!empty($this->_values['event']['is_pay_later']) &&
+    if ($this->getEventValue('is_pay_later') &&
       !is_array($this->_paymentProcessor)
     ) {
       $this->_defaults['is_pay_later'] = 1;
@@ -463,7 +447,7 @@ class CRM_Event_Form_Registration_Register extends CRM_Event_Form_Registration {
       $allAreBillingModeProcessors = FALSE;
     }
 
-    if (!$allAreBillingModeProcessors || !empty($this->_values['event']['is_pay_later']) || $bypassPayment
+    if (!$allAreBillingModeProcessors || $this->getEventValue('is_pay_later') || $bypassPayment
     ) {
       //freeze button to avoid multiple calls.
       $this->submitOnce = TRUE;
@@ -685,19 +669,9 @@ class CRM_Event_Form_Registration_Register extends CRM_Event_Form_Registration {
     //set as Primary participant
     $params['is_primary'] = 1;
 
-    if ($this->_values['event']['is_pay_later']
-      && (!array_key_exists('hidden_processor', $params) || $params['payment_processor_id'] == 0)
-    ) {
-      $params['is_pay_later'] = 1;
-    }
-    else {
-      $params['is_pay_later'] = 0;
-    }
-
-    $this->set('is_pay_later', $params['is_pay_later']);
+    $params['is_pay_later'] = (int) $this->isPayLater();
 
     // assign pay later stuff
-    $this->_params['is_pay_later'] = $params['is_pay_later'] ?? FALSE;
     $this->assign('is_pay_later', $params['is_pay_later']);
     $this->assign('pay_later_text', $params['is_pay_later'] ? $this->_values['event']['pay_later_text'] : NULL);
     $this->assign('pay_later_receipt', $params['is_pay_later'] ? $this->_values['event']['pay_later_receipt'] : NULL);

@@ -1,4 +1,4 @@
-(function(angular, $, _) {
+(function(angular, $) {
   "use strict";
 
   // Ensures each searchInput instance gets a unique id
@@ -29,6 +29,7 @@
 
         // For the ON clause, string values must be quoted
         ctrl.ngModel.$parsers.push(function(viewValue) {
+          viewValue = formatDataType(viewValue);
           return ctrl.format === 'json' && typeof viewValue === 'string' && viewValue.length ? JSON.stringify(viewValue) : viewValue;
         });
 
@@ -76,4 +77,4 @@
     }
   });
 
-})(angular, CRM.$, CRM._);
+})(angular, CRM.$);

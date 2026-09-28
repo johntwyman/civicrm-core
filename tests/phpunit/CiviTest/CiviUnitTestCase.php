@@ -387,7 +387,6 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
 
     $this->renameLabels();
     $this->ensureMySQLMode(['IGNORE_SPACE', 'ERROR_FOR_DIVISION_BY_ZERO', 'STRICT_TRANS_TABLES']);
-    putenv('CIVICRM_DEDUPE_OPTIMIZER=TRUE');
     $this->originalSettings = \Civi::settings()->exportValues();
 
     // There doesn't seem to be a better way to get the current error handler.
@@ -1645,10 +1644,15 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    * @return array
    */
   public function customFieldCreate($params) {
+    // Auto-pick appropriate html_type if not given
+    if (!isset($params['html_type'])) {
+      $dataType = $params['data_type'] ?? 'String';
+      $htmlTypes = Civi::entity('CustomField')->getOptions('html_type', ['data_type' => $dataType]);
+      $params['html_type'] = $htmlTypes[0]['id'];
+    }
     $params = array_merge([
       'label' => 'Custom Field',
       'data_type' => 'String',
-      'html_type' => 'Text',
       'is_searchable' => 1,
       'is_active' => 1,
       'default_value' => 'defaultValue',

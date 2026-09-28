@@ -542,8 +542,33 @@ SELECT  id, html_type
    */
   public function postProcess() {
     $params = $this->controller->exportValues($this->_name);
-    CRM_Price_BAO_LineItem::changeFeeSelections($params, $this->getParticipantID(), 'participant', $this->getContributionID(), $this);
-    $this->contributionAmt = CRM_Core_DAO::getFieldValue('CRM_Contribute_BAO_Contribution', $this->getContributionID(), 'total_amount');
+    $order = new CRM_Financial_BAO_Order();
+    $order->setPriceSelectionFromUnfilteredInput($params);
+    // This will cause the buildAmount hook to be called.
+    $order->setForm($this);
+
+    // The participant and contribution already exist (we are only ever
+    // changing the selections on an existing participant here), so these
+    // are form-level facts - stamp them onto each submitted line item as
+    // early as possible. Order::getLineItems() only sometimes sets
+    // entity_table (for memberships) and never sets entity_id or
+    // contribution_id (those are only assigned when Order creates a brand
+    // new entity/contribution, which doesn't happen here).
+    $submittedLineItems = $order->getLineItems();
+    foreach ($submittedLineItems as &$submittedLineItem) {
+      $submittedLineItem['entity_id'] = $this->getParticipantID();
+      $submittedLineItem['entity_table'] = 'civicrm_participant';
+      $submittedLineItem['contribution_id'] = $this->getContributionID();
+    }
+    unset($submittedLineItem);
+    // $submittedLineItems only ever covers this participant's own fields, but
+    // several participants can share one contribution (eg. a group
+    // registration) - bring in any other line item on the contribution
+    // unchanged, or changeFeeSelections() will treat it as deselected.
+    $this->addLineItemsNotYetRepresented($submittedLineItems, $this->getContributionID(), 'civicrm_participant', $this->getParticipantID());
+
+    CRM_Price_BAO_LineItem::changeFeeSelections($submittedLineItems, $this->getContributionID());
+    $this->updateEntityRecordOnChangeFeeSelection($order->getTotalAmount(), $this->getParticipantID());
     // email sending
     if ($this->getSubmittedValue('send_receipt')) {
       if (array_key_exists($this->getSubmittedValue('from_email_address'), $this->_fromEmails['from_email_id'])) {
@@ -571,6 +596,74 @@ SELECT  id, html_type
         "reset=1&action=add&component=event&id={$this->getParticipantID()}&cid={$this->getContactID()}"
       ));
     }
+  }
+
+  /**
+   * Merge in the contribution's other currently-active line items not already represented.
+   *
+   * changeFeeSelections() treats any of the contribution's price_field_value_ids
+   * absent from $submittedLineItems as having been deselected, and cancels it.
+   * $submittedLineItems here only ever covers this participant's own fields,
+   * but a contribution can cover several participants (eg. a group
+   * registration), so any line item belonging to a DIFFERENT participant on
+   * the same contribution has to be added here, unchanged, or it would be
+   * wrongly cancelled. Lines belonging to this same participant are
+   * deliberately left alone: the submission is already authoritative for
+   * them, and re-adding an old value here would stop a genuine fee-selection
+   * change from cancelling it.
+   *
+   * @param array $submittedLineItems
+   *   Line items already worked out for this participant, keyed by
+   *   price_field_value_id.
+   * @param int $contributionID
+   * @param string $entityTable
+   *   The entity_table the submission is authoritative for.
+   * @param int $entityID
+   *   The entity_id the submission is authoritative for.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  private function addLineItemsNotYetRepresented(array &$submittedLineItems, int $contributionID, string $entityTable, int $entityID): void {
+    $templateOrder = new CRM_Financial_BAO_Order();
+    $templateOrder->setTemplateContributionID($contributionID);
+    foreach ($templateOrder->getLineItems() as $lineItem) {
+      if (($lineItem['entity_table'] ?? NULL) === $entityTable && (int) ($lineItem['entity_id'] ?? 0) === $entityID) {
+        continue;
+      }
+      if ($lineItem['qty'] == 0 && $lineItem['line_total'] == 0) {
+        // Already cancelled - nothing to preserve.
+        continue;
+      }
+      if (!isset($submittedLineItems[$lineItem['price_field_value_id']])) {
+        $submittedLineItems[$lineItem['price_field_value_id']] = $lineItem;
+      }
+    }
+  }
+
+  /**
+   * Update the participant's fee_amount and fee_level to reflect the new
+   * fee selection, and log the change as an activity.
+   *
+   * @param int|float $feeAmount
+   * @param int $participantID
+   */
+  private function updateEntityRecordOnChangeFeeSelection($feeAmount, $participantID): void {
+    $getUpdatedLineItems = "SELECT *
+      FROM civicrm_line_item
+      WHERE (entity_table = 'civicrm_participant' AND entity_id = {$participantID} AND qty > 0)";
+    $getUpdatedLineItemsDAO = CRM_Core_DAO::executeQuery($getUpdatedLineItems);
+    $line = [];
+    while ($getUpdatedLineItemsDAO->fetch()) {
+      $line[$getUpdatedLineItemsDAO->price_field_value_id] = $getUpdatedLineItemsDAO->label . ' - ' . (float) $getUpdatedLineItemsDAO->qty;
+    }
+
+    CRM_Event_BAO_Participant::add([
+      'id' => $participantID,
+      'fee_level' => $line,
+      'fee_amount' => $feeAmount,
+    ]);
+
+    CRM_Event_BAO_Participant::addActivityForSelection($participantID, 'Change Registration');
   }
 
   /**

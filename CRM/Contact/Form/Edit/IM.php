@@ -33,7 +33,7 @@ class CRM_Contact_Form_Edit_IM {
    * @deprecated since 6.3 will be removed around 6.10
    */
   public static function buildQuickForm(&$form, $blockCount = NULL, $blockEdit = FALSE) {
-    CRM_Core_Error::deprecatedFunctionWarning('no alternative');
+    CRM_Core_Error::deprecatedFunctionWarning();
     if (!$blockCount) {
       CRM_Core_Error::deprecatedWarning('pass in blockCount');
       $blockId = ($form->get('IM_Block_Count')) ? $form->get('IM_Block_Count') : 1;
@@ -41,7 +41,6 @@ class CRM_Contact_Form_Edit_IM {
     else {
       $blockId = $blockCount;
     }
-    $form->applyFilter('__ALL__', 'trim');
 
     //IM provider select
     $form->addField("im[$blockId][provider_id]", ['entity' => 'im', 'class' => 'eight', 'placeholder' => NULL, 'title' => ts('IM Type %1', [1 => $blockId])]);

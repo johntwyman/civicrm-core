@@ -644,8 +644,11 @@ ORDER BY   gc.contact_id, g.children
    * @throws \CRM_Core_Exception
    */
   public static function populateTemporaryTableWithContactsInGroups(array $groupIDs, string $temporaryTable): void {
+    if (empty($groupIDs)) {
+      return;
+    }
     $childAndParentGroupIDs = array_merge($groupIDs, CRM_Contact_BAO_GroupNesting::getDescendentGroupIds($groupIDs));
-    $smartGroups = \Civi\Api4\Group::get(TRUE)
+    $smartGroups = \Civi\Api4\Group::get(FALSE)
       ->addSelect('id')
       ->addWhere('is_active', '=', TRUE)
       ->addWhere('saved_search_id', 'IS NOT EMPTY')

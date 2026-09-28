@@ -30,17 +30,6 @@ class CRM_Event_BAO_Event extends CRM_Event_DAO_Event implements \Civi\Core\Hook
   }
 
   /**
-   * @deprecated - this bypasses hooks.
-   * @param int $id
-   * @param bool $is_active
-   * @return bool
-   */
-  public static function setIsActive($id, $is_active) {
-    CRM_Core_Error::deprecatedFunctionWarning('writeRecord');
-    return CRM_Core_DAO::setFieldValue('CRM_Event_DAO_Event', $id, 'is_active', $is_active);
-  }
-
-  /**
    * Add the event.
    *
    * @param array $params
@@ -986,6 +975,14 @@ WHERE civicrm_event.is_active = 1
       ],
       ['entity_id' => $copyEvent->id],
       ['replace' => ['target_entity_id' => $copyEvent->id]]
+    );
+
+    CRM_Core_DAO::copyGeneric('CRM_Core_DAO_EntityTag',
+      [
+        'entity_id' => $id,
+        'entity_table' => 'civicrm_event',
+      ],
+      ['entity_id' => $copyEvent->id]
     );
 
     $oldMapping = CRM_Core_BAO_ActionSchedule::getMapping($eventValues['is_template'] ? CRM_Event_ActionMapping::EVENT_TPL_MAPPING_ID : CRM_Event_ActionMapping::EVENT_NAME_MAPPING_ID);

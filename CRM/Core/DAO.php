@@ -90,7 +90,7 @@ class CRM_Core_DAO extends DB_DataObject {
     DB_DAO_NOTNULL = 128,
     VALUE_SEPARATOR = "",
     BULK_INSERT_COUNT = 200,
-    BULK_INSERT_HIGH_COUNT = 200,
+    BULK_INSERT_HIGH_COUNT = 10000,
     QUERY_FORMAT_WILDCARD = 1,
     QUERY_FORMAT_NO_QUOTES = 2,
 
@@ -943,6 +943,11 @@ class CRM_Core_DAO extends DB_DataObject {
 
       // if there is no value then make the variable NULL
       if ($exists) {
+        // Trim string inputs
+        $inputType = $field['input_type'] ?? $field['html']['type'] ?? NULL;
+        if (in_array($inputType, ['Text', 'Email', 'Url'], TRUE) && is_string($value)) {
+          $value = mb_trim($value);
+        }
         if ($value === '') {
           if ($dbName === $primaryKey && $field['type'] === CRM_Utils_Type::T_INT) {
             // See also \Civi\Api4\Utils\FormattingUtil::formatWriteParams().

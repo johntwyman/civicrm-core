@@ -1,4 +1,4 @@
-(function(angular, $, _) {
+(function(angular, $) {
   // Declare a list of dependencies.
   angular.module('crmCiviimport', CRM.angRequires('crmCiviimport'));
 
@@ -117,7 +117,7 @@
             // The $scope.data.entities has the selected data (but the fields are already filtered)
             var selected = $scope.data.entities[entity.entity_name].selected;
             if (selected.action !== 'ignore') {
-              const availableEntity = _.clone(entity);
+              const availableEntity = Object.assign({}, entity);
               availableEntity.children = filterEntityFields(entity.entity_type, entity.children, selected, entity.entity_name + '.');
               fields.push(availableEntity);
             }
@@ -205,7 +205,7 @@
           const action = selection.action;
           const rules = $scope.data.dedupeRules;
           const dedupeRules = Object.keys(rules)
-            .filter(key => selection.dedupe_rule.includes(key))
+            .filter(key => selection.dedupe_rule?.includes(key))
             .map(key => rules[key]);
           fields = fields.filter((function (field) {
             // Using replace here is safe ... for now... cos only soft credits have a prefix
@@ -268,7 +268,7 @@
           const dedupeRules = [
             {contact_type: null, text: ts('Universal'), icon: 'fa-star', children: []},
           ];
-          ($scope.data.dedupeRules || []).forEach((rule) => {
+          Object.values($scope.data.dedupeRules).forEach((rule) => {
             if (!selectedEntity || !rule.contact_type || rule.contact_type === selectedEntity) {
               let optGroup = dedupeRules.find(group => group.contact_type === rule.contact_type);
               if (!optGroup) {
@@ -454,4 +454,4 @@
       entity.selected.dedupe_rule = [];
     });
   });
-})(angular, CRM.$, CRM._);
+})(angular, CRM.$);

@@ -1,4 +1,11 @@
 (function(angular, $, _) {
+
+  // A search-range value is an object like {'>=': 1}; a plain value may be a string, number, array or Date.
+  function isPlainObject(value) {
+    return value !== null && typeof value === 'object' &&
+      (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+  }
+
   let afFieldId = 0;
   // Example usage: <div af-fieldset="myModel"><af-field name="do_not_email" /></div>
   angular.module('af').component('afField', {
@@ -59,6 +66,17 @@
         }
 
         fieldOptions = this.defn.options || null;
+
+        // Datepickers read these once when linking, so they must be set before the template renders
+        if (this.defn.search_range && this.defn.is_date) {
+          this.inputAttrs = [this.defn.input_attrs || {}];
+          for (let i = 1; i <= 2; ++i) {
+            const attrs = structuredClone(this.defn.input_attrs || {});
+            attrs.placeholder = attrs['placeholder' + i];
+            attrs.timePlaceholder = attrs['timePlaceholder' + i];
+            this.inputAttrs.push(attrs);
+          }
+        }
 
         // Ensure boolean options are truly boolean
         if (this.defn.data_type === 'Boolean') {
@@ -235,16 +253,6 @@
             ) {
               $scope.dataProvider.getFieldData()[ctrl.fieldName] = {};
             }
-            // Initialize inputAttrs (only used for datePickers at the moment)
-            if (ctrl.defn.is_date) {
-              ctrl.inputAttrs.push(ctrl.defn.input_attrs || {});
-              for (let i = 1; i <= 2; ++i) {
-                const attrs = structuredClone(ctrl.defn.input_attrs || {});
-                attrs.placeholder = attrs['placeholder' + i];
-                attrs.timePlaceholder = attrs['timePlaceholder' + i];
-                ctrl.inputAttrs.push(attrs);
-              }
-            }
           }
         }
 
@@ -316,7 +324,7 @@
           value = getRelativeDate(value, ctrl.defn.input_attrs.time);
         }
         if (ctrl.defn.input_type === 'Number' && ctrl.defn.search_range) {
-          if (!_.isPlainObject(value)) {
+          if (!isPlainObject(value)) {
             value = {
               '>=': +(('' + value).split('-')[0] || 0),
               '<=': +(('' + value).split('-')[1] || 0),
@@ -327,7 +335,7 @@
         }
         // Initialze search range unless the field also has options (as in a date search) and
         // the default value is a valid option.
-        else if (ctrl.defn.search_range && !_.isPlainObject(value) &&
+        else if (ctrl.defn.search_range && !isPlainObject(value) &&
           !(ctrl.defn.options && ctrl.defn.options.some((option) => option.id === value))
         ) {
           value = {
@@ -485,9 +493,7 @@
 
       $scope.select2Options = function() {
         return {
-          results: _.transform($scope.getOptions(), function(result, opt) {
-            result.push({id: opt.id, text: opt.label});
-          }, [])
+          results: $scope.getOptions().map((opt) => ({id: opt.id, text: opt.label}))
         };
       };
 
@@ -523,7 +529,7 @@
           if (ctrl.defn.is_date) {
             // The '{}' string is a placeholder for "choose date range"
             if (val === '{}') {
-              val = !_.isPlainObject(currentVal) ? {} : currentVal;
+              val = !isPlainObject(currentVal) ? {} : currentVal;
             }
           }
           // If search_range, this select is the "low" value (the high value uses ng-model without a getterSetter fn)
@@ -550,7 +556,7 @@
         }
         // Getter - transform data into a simple string or array for Select2
         if (ctrl.defn.is_date) {
-          return _.isPlainObject(currentVal) ? '{}' : currentVal;
+          return isPlainObject(currentVal) ? '{}' : currentVal;
         }
         // If search_range, this select is the "low" value (the high value uses ng-model without a getterSetter fn)
         else if (ctrl.defn.search_range) {

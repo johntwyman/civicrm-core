@@ -78,7 +78,7 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
     $this->_params = $this->get('params');
     $this->_params[0]['tax_amount'] = $this->get('tax_amount');
 
-    $this->_params[0]['is_pay_later'] = $this->get('is_pay_later');
+    $this->_params[0]['is_pay_later'] = $this->isPayLater();
     $this->assign('is_pay_later', $this->_params[0]['is_pay_later']);
     $this->assign('pay_later_receipt', $this->_params[0]['is_pay_later'] ? $this->_values['event']['pay_later_receipt'] : NULL);
     $this->assign('confirm_text', $this->getEventValue('confirm_text'));
@@ -170,7 +170,7 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
         }
       }
     }
-    if (!empty($this->_values['event']['is_pay_later']) && empty($this->_defaults['payment_processor_id'])) {
+    if ($this->getEventValue('is_pay_later') && empty($this->_defaults['payment_processor_id'])) {
       $defaults['is_pay_later'] = 1;
     }
     return $defaults ?? [];
@@ -264,8 +264,8 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       (!$this->_requireApproval || ($this->getEventValue('is_pay_later') && Civi::settings()->get('allow_price_selection_during_approval_registration')))
     ) {
 
-      [$taxAmount, $participantDetails, $individual, $amountArray] = $this->calculateAmounts();
-      $this->assign('totalTaxAmount', $taxAmount);
+      [$participantDetails, $individual, $amountArray] = $this->calculateAmounts();
+      $this->assign('totalTaxAmount', $this->getOrderTotalTaxAmount());
       $this->_amount = $amountArray;
       $this->assign('taxTerm', \Civi::settings()->get('tax_term'));
       if (\Civi::settings()->get('invoicing')) {
@@ -277,20 +277,18 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       $this->assign('part', $participantDetails);
       $this->set('part', $participantDetails);
       $this->assign('amounts', $amountArray);
-      $this->assign('totalAmount', $this->_totalAmount);
-      $this->set('totalAmount', $this->_totalAmount);
+      $this->assign('totalAmount', $this->getOrderTotalAmount());
+      $this->set('totalAmount', $this->getOrderTotalAmount());
 
       $this->assign('showPaymentOnConfirm', $this->isShowPaymentOnConfirm());
       if ($this->isShowPaymentOnConfirm()) {
         // Setup and load the payment elements on the form
         $this->_paymentProcessorIDs = explode(CRM_Core_DAO::VALUE_SEPARATOR, $this->_values['event']['payment_processor'] ?? NULL);
-
-        $isPayLater = $this->getEventValue('is_pay_later');
-        $this->setPayLaterLabel($isPayLater ? $this->_values['event']['pay_later_text'] : '');
+        $this->setPayLaterLabel($this->getEventValue('is_pay_later') ? $this->_values['event']['pay_later_text'] : '');
 
         $this->assign('pay_later_receipt', '');
         // @fixme These functions all seem to do similar things but take one away and the house of cards falls down..
-        $this->assignPaymentProcessor($this->_values['event']['is_pay_later']);
+        $this->assignPaymentProcessor($this->getEventValue('is_pay_later'));
         // This is required only after the form is submitted to repopulate form fields so that eg. credit card fields
         //   can be retrieved via getSubmittedValue() from the ThankYou page. Otherwise they are lost.
         $this->preProcessPaymentOptions();
@@ -465,7 +463,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       $this->set('finalAmount', $this->_amount);
     }
     $participantCount = [];
-    $totalTaxAmount = 0;
 
     if ($this->isShowPaymentOnConfirm()) {
       // Set the payment processor so that we can submit the payment
@@ -483,10 +480,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       elseif ($participantNum) {
         $participantCount[$participantNum] = 'participant';
       }
-      $totalTaxAmount += $participantRecord['tax_amount'] ?? 0;
-      if (!empty($participantRecord['is_primary'])) {
-        $taxAmount = &$params[$participantNum]['tax_amount'];
-      }
       //lets get additional participant id to cancel.
       if ($this->_allowConfirmation && is_array($cancelledIds)) {
         $additionalId = $participantRecord['participant_id'] ?? NULL;
@@ -495,12 +488,10 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
         }
       }
       if ($this->isShowPaymentOnConfirm()) {
-        // If payment_processor_id is 0 or unset we are pay later.
-        // Otherwise we are using a payment processor
-        $params[$participantNum]['is_pay_later'] = $this->_values['event']['is_pay_later'] = empty($this->getSubmittedValue('payment_processor_id'));
+        $params[$participantNum]['is_pay_later'] = $this->isPayLater();
       }
     }
-    $taxAmount = $totalTaxAmount;
+
     $payment = $registerByID = $contribution = NULL;
     $paymentObjError = ts('The system did not record payment details for this payment and so could not process the transaction. Please report this error to the site administrator.');
 
@@ -604,16 +595,8 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
           $participantRecord['participant_register_date'] = $this->_values['participant']['register_date'];
         }
 
-        $createContrib = $participantRecord['amount'] != 0;
-        // force to create zero amount contribution, CRM-5095
-        if (!$createContrib && ($participantRecord['amount'] == 0)
-          && $this->_priceSetId && $this->_lineItem
-        ) {
-          $createContrib = TRUE;
-        }
-
-        if ($createContrib && !empty($participantRecord['is_primary']) &&
-          !$this->_allowWaitlist && !$this->_requireApproval
+        if ($this->getLineItems() && !empty($participantRecord['is_primary']) &&
+          $this->isProcessRegistrationInRealTime()
         ) {
           // if paid event add a contribution record
           //if primary participant contributing additional amount
@@ -641,15 +624,14 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       // CRM-11182 - Confirmation page might not be monetary
       if ($this->isPaidEvent()) {
         if (!$pending && !empty($participantRecord['is_primary']) &&
-          !$this->_allowWaitlist && !$this->_requireApproval
+          $this->isProcessRegistrationInRealTime()
         ) {
           $this->set('receiveDate', $participantRecord['receive_date'] ?? NULL);
           $this->set('trxnId', $participantRecord['trxn_id'] ?? NULL);
         }
       }
 
-      $participantRecord['fee_amount'] = $participantRecord['amount'] ?? NULL;
-      $this->confirmPostProcess($contactID, $contribution, $participantRecord, $participantNum);
+      $this->confirmPostProcess($contactID, $participantRecord, $participantNum);
     }
 
     //handle if no additional participant.
@@ -673,7 +655,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
         $allParticipantIds = array_merge([$registerByID], $this->_additionalParticipantIds);
       }
 
-      $totalTaxAmount = 0;
       foreach ($this->_lineItem as $key => $value) {
         if ($value == 'skip') {
           continue;
@@ -710,7 +691,7 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
     // The concept of contributeMode is deprecated.
     if (($this->getPaymentProcessorObject()->supports('noReturn')
       ) && empty($params[0]['is_pay_later']) &&
-      !$this->_allowWaitlist && !$this->_requireApproval &&
+      $this->isProcessRegistrationInRealTime() &&
       $this->_totalAmount > 0
     ) {
 
@@ -869,34 +850,28 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
     $params, $result, $contactID,
     $pending = FALSE
   ) {
-    $form = $this;
     // Note this used to be shared with the backoffice form & no longer is, some code may no longer be required.
     $transaction = new CRM_Core_Transaction();
 
     $now = date('YmdHis');
-    $receiptDate = NULL;
 
-    if (!empty($form->_values['event']['is_email_confirm'])) {
-      $receiptDate = $now;
-    }
-
-    // CRM-20264: fetch CC type ID and number (last 4 digit) and assign it back to $params
-    CRM_Contribute_Form_AbstractEditPayment::formatCreditCardDetails($params);
+    // @todo - this should come from the order
+    $financialTypeID = !empty($this->getEventValue('financial_type_id')) ? $this->getEventValue('financial_type_id') : $params['financial_type_id'];
 
     $contribParams = [
       'contact_id' => $contactID,
-      'financial_type_id' => !empty($form->_values['event']['financial_type_id']) ? $form->_values['event']['financial_type_id'] : $params['financial_type_id'],
+      'financial_type_id' => $financialTypeID,
       'receive_date' => $now,
-      'total_amount' => $params['amount'],
-      'tax_amount' => $params['tax_amount'],
+      'total_amount' => $this->getOrder()->getTotalAmount(),
+      'tax_amount' => $this->getOrderTotalTaxAmount(),
       'amount_level' => $params['amount_level'],
       'invoice_id' => $params['invoiceID'],
       'currency' => $this->getCurrency(),
       'source' => !empty($params['participant_source']) ? $params['participant_source'] : $params['description'],
       'is_pay_later' => $params['is_pay_later'] ?? 0,
       'campaign_id' => $params['campaign_id'] ?? NULL,
-      'card_type_id' => $params['card_type_id'] ?? NULL,
-      'pan_truncation' => $params['pan_truncation'] ?? NULL,
+      'card_type_id' => $this->getCardTypeID(),
+      'pan_truncation' => $this->getPanTruncation(),
       // The ternary is probably redundant - paymentProcessor should always be set.
       // For pay-later contributions it will be the pay-later processor.
       'payment_processor' => $this->_paymentProcessor ? $this->_paymentProcessor['id'] : NULL,
@@ -908,7 +883,7 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       $contribParams += [
         'fee_amount' => $result['fee_amount'] ?? NULL,
         'trxn_id' => $result['trxn_id'],
-        'receipt_date' => $receiptDate,
+        'receipt_date' => $this->getReceiptDate(),
       ];
     }
 
@@ -919,14 +894,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
     }
 
     $contribParams['is_test'] = $this->isTest();
-
-    if (!empty($contribParams['invoice_id'])) {
-      $contribParams['id'] = CRM_Core_DAO::getFieldValue('CRM_Contribute_DAO_Contribution',
-        $contribParams['invoice_id'],
-        'id',
-        'invoice_id'
-      );
-    }
 
     $contribParams['address_id'] = CRM_Contribute_BAO_Contribution::createAddress($params);
 
@@ -940,6 +907,23 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
     $transaction->commit();
 
     return $contribution;
+  }
+
+  protected function getPanTruncation(): string {
+    return substr((string) $this->getSubmittedValue('credit_card_number'), -4);
+  }
+
+  /**
+   * Get the card_type_id.
+   *
+   * This value is the integer representing the option value for
+   * the credit card type (visa, mastercard). It is stored as part of the
+   * payment record in civicrm_financial_trxn.
+   *
+   * @return int|null
+   */
+  protected function getCardTypeID(): ?int {
+    return CRM_Core_PseudoConstant::getKey('CRM_Core_BAO_FinancialTrxn', 'card_type_id', $this->getSubmittedValue('credit_card_type'));
   }
 
   /**
@@ -1256,7 +1240,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
    * @return array
    */
   private function calculateAmounts(): array {
-    $taxAmount = 0;
     $amountArray = [];
     foreach ($this->_params as $k => $v) {
       if ($v === 'skip') {
@@ -1264,8 +1247,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       }
       $individualTaxAmount = 0;
       $append = '';
-      //display tax amount on confirmation page
-      $taxAmount += $v['tax_amount'];
       if (is_array($v)) {
         $this->cleanMoneyFields($v);
         foreach (['first_name', 'last_name'] as $name) {
@@ -1303,12 +1284,9 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
         $individual[$k]['totalAmtWithTax'] = $amountArray[$k]['amount'];
         $individual[$k]['totalTaxAmt'] = $individualTaxAmount + $v['tax_amount'];
         $this->_totalAmount = $this->_totalAmount + $amountArray[$k]['amount'];
-        if (!empty($v['is_primary'])) {
-          $this->set('primaryParticipantAmount', $amountArray[$k]['amount']);
-        }
       }
     }
-    return [$taxAmount, $participantDetails, $individual, $amountArray];
+    return [$participantDetails, $individual, $amountArray];
   }
 
   /**
@@ -1355,6 +1333,19 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
       }
     }
     return $amountArray;
+  }
+
+  /**
+   * @return string|null
+   * @throws \CRM_Core_Exception
+   */
+  private function getReceiptDate(): ?string {
+    $receiptDate = NULL;
+
+    if ($this->getEventValue('is_email_confirm')) {
+      $receiptDate = date('YmdHis');
+    }
+    return $receiptDate;
   }
 
 }

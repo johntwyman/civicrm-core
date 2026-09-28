@@ -1,4 +1,4 @@
-(function(angular, $, _) {
+(function(angular, $) {
   "use strict";
 
   angular.module('crmSearchDisplayList').component('crmSearchDisplayList', {
@@ -21,10 +21,21 @@
         ctrl = angular.extend(this, CRM.utils.cloneDeep(searchDisplayBaseTrait), CRM.utils.cloneDeep(searchDisplayTasksTrait), CRM.utils.cloneDeep(searchDisplayEditableTrait));
 
       this.$onInit = function() {
+        this.onPostRun.push(function(apiResults, status) {
+          if (status === 'success' && ctrl.settings.section_group_by) {
+            // Mark the first row of each group with its value, for the
+            // template to render a header before it - see groupRows() for why
+            // this is a client-side grouping, not a real SQL GROUP BY.
+            ctrl.groupRows(ctrl.results, ctrl.settings.section_group_by).forEach(function(group) {
+              group.rows[0].groupHeader = group.value;
+            });
+          }
+        });
+
         this.initializeDisplay($scope, $element);
       };
 
     }
   });
 
-})(angular, CRM.$, CRM._);
+})(angular, CRM.$);

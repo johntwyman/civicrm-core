@@ -3406,6 +3406,11 @@ WHERE  $smartGroupClause
   public function notes(&$values) {
     [$name, $op, $value, $grouping, $wildcard] = $values;
 
+    if (is_array($value) && in_array(key($value), CRM_Core_DAO::acceptedSQLOperators(), TRUE)) {
+      $op = key($value);
+      $value = $value[$op];
+    }
+
     $noteOptionValues = $this->getWhereValues('note_option', $grouping);
     $noteOption = $noteOptionValues['2'] ?? '6';
     $noteOption = ($name == 'note_body') ? 2 : (($name == 'note_subject') ? 3 : $noteOption);
@@ -3657,6 +3662,11 @@ WHERE  $smartGroupClause
   public function street_address(&$values) {
     [$name, $op, $value, $grouping] = $values;
 
+    if (is_array($value) && in_array(key($value), CRM_Core_DAO::acceptedSQLOperators(), TRUE)) {
+      $op = key($value);
+      $value = $value[$op];
+    }
+
     if (!$op) {
       $op = 'LIKE';
     }
@@ -3689,6 +3699,11 @@ WHERE  $smartGroupClause
    */
   public function street_number(&$values) {
     [$name, $op, $value, $grouping, $wildcard] = $values;
+
+    if (is_array($value) && in_array(key($value), CRM_Core_DAO::acceptedSQLOperators(), TRUE)) {
+      $op = key($value);
+      $value = $value[$op];
+    }
 
     if (!$op) {
       $op = '=';
@@ -6553,6 +6568,14 @@ AND   displayRelType.is_active = 1
     // Is this still required - the above goes off the unique name. Test with things like
     // communication_preferences & prefix_id.
     if (!empty($this->_returnProperties[$field['name']])) {
+      // When a different field is keyed by this non-unique name, that field owns the
+      // return property. A same-named column on another table (e.g.
+      // civicrm_grant.financial_type_id, unique name grant_financial_type_id) must not
+      // match it, or it overwrites the intended select clause with the wrong table.
+      // See dev/core#5344.
+      if ($fieldName !== $field['name'] && isset($this->_fields[$field['name']])) {
+        return FALSE;
+      }
       return TRUE;
     }
     return FALSE;

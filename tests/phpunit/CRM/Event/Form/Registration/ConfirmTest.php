@@ -165,7 +165,6 @@ class CRM_Event_Form_Registration_ConfirmTest extends CiviUnitTestCase {
     $this->hookClass->setHook('civicrm_alterPaymentProcessorParams', [$this, 'checkPaymentParameters']);
     $paymentProcessorID = $this->processorCreate();
     $event = $this->eventCreatePaid(['payment_processor' => [$paymentProcessorID]]);
-    $_REQUEST['mode'] = 'live';
     // Add someone to the waitlist.
     $waitlistContactID = $this->individualCreate();
     $waitlistParticipantID = $this->participantCreate(['event_id' => $event['id'], 'contact_id' => $waitlistContactID, 'status_id.name' => 'On waitlist']);
@@ -198,7 +197,7 @@ class CRM_Event_Form_Registration_ConfirmTest extends CiviUnitTestCase {
       'billing_state_province-5' => 'AP',
       'billing_country-5' => 'US',
       'hidden_processor' => 1,
-    ]);
+    ], 'live');
     $waitlistParticipant = $this->callAPISuccess('Participant', 'getsingle', ['id' => $waitlistParticipantID, 'return' => ['participant_status']]);
     $this->assertEquals('Registered', $waitlistParticipant['participant_status'], 'Invalid participant status. Expecting: Registered');
   }
@@ -398,6 +397,64 @@ class CRM_Event_Form_Registration_ConfirmTest extends CiviUnitTestCase {
     $mailSent = $this->sentMail;
     $this->assertStringContainsString('Public Event Pre Profile (Additional)', $mailSent[0]['body']);
     $this->assertStringNotContainsString('>Event Pre Profile (Additional)', $mailSent[0]['body']);
+  }
+
+  /**
+   * Test for https://lab.civicrm.org/dev/core/-/work_items/6744
+   *
+   * When the additional participant's own profile has a field that doesn't
+   * exist on the primary's profile (e.g. a 'relationship to primary' field),
+   * that field should appear in the additional participant's own
+   * confirmation email. Conversely a field that only exists on the
+   * primary's own profile should not appear in the additional participant's
+   * email at all.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testMailAdditionalParticipantOwnProfileFields(): void {
+    $this->eventCreateUnpaid();
+    // Only on the additional participant's own pre-profile - simulates a
+    // field like 'Relationship' that only makes sense for additional
+    // participants.
+    $this->createTestEntity('UFField', [
+      'uf_group_id' => $this->ids['UFGroup']['event_pre_additional_event'],
+      'field_name' => 'nick_name',
+      'label' => 'nick_name',
+    ], 'nick_name');
+    // Only on the primary's own pre-profile - simulates a field like
+    // 'Primary Address' that an additional participant never sees or fills in.
+    $this->createTestEntity('UFField', [
+      'uf_group_id' => $this->ids['UFGroup']['event_pre_event'],
+      'field_name' => 'middle_name',
+      'label' => 'middle_name',
+    ], 'middle_name');
+
+    $form = $this->getTestForm('CRM_Event_Form_Registration_Register', [
+      'first_name' => 'Participant1',
+      'last_name' => 'LastName',
+      'middle_name' => 'PrimaryOnlyField',
+      'email-Primary' => 'participant1@example.com',
+      'additional_participants' => 1,
+    ], ['id' => $this->getEventID()])
+      ->addSubsequentForm('CRM_Event_Form_Registration_AdditionalParticipant', [
+        'first_name' => 'Participant2',
+        'last_name' => 'LastName',
+        'nick_name' => 'AdditionalOnlyField',
+        'email-Primary' => 'participant2@example.com',
+      ])
+      ->addSubsequentForm('CRM_Event_Form_Registration_Confirm')
+      ->processForm();
+    $mailSent = $form->getMail();
+
+    // Sanity check - the primary's own field shows up in the primary's own email.
+    $this->assertStringContainsString('middle_name	PrimaryOnlyField', $mailSent[0]['body']);
+
+    // The additional participant's own email should show their own answer
+    // for a field that only exists on their own profile ...
+    $this->assertStringContainsString('nick_name	AdditionalOnlyField', $mailSent[1]['body']);
+    // ... and should not show the primary-only field or its value at all.
+    $this->assertStringNotContainsString('middle_name', $mailSent[1]['body']);
+    $this->assertStringNotContainsString('PrimaryOnlyField', $mailSent[1]['body']);
   }
 
   /**
@@ -613,9 +670,10 @@ class CRM_Event_Form_Registration_ConfirmTest extends CiviUnitTestCase {
    *
    * @param int $eventID
    * @param array $submittedValues Submitted Values
+   * @param string $mode
    */
-  protected function submitForm(int $eventID, array $submittedValues): void {
-    $form = $this->getFormWrapper($submittedValues, $eventID);
+  protected function submitForm(int $eventID, array $submittedValues, string $mode = ''): void {
+    $form = $this->getFormWrapper($submittedValues, $eventID, $mode);
     $form->processForm();
   }
 
@@ -722,13 +780,18 @@ class CRM_Event_Form_Registration_ConfirmTest extends CiviUnitTestCase {
   /**
    * @param array $submittedValues
    * @param int $eventID
+   * @param string $mode
    *
    * @return \Civi\Test\FormWrappers\EventFormOnline
    */
-  public function getFormWrapper(array $submittedValues, int $eventID) {
+  public function getFormWrapper(array $submittedValues, int $eventID, string $mode = '') {
+    $urlParameters = ['id' => $eventID];
+    if ($mode !== '') {
+      $urlParameters['mode'] = $mode;
+    }
     return $this->getTestForm('CRM_Event_Form_Registration_Register',
       $submittedValues,
-      ['id' => $eventID])
+      $urlParameters)
       ->addSubsequentForm('CRM_Event_Form_Registration_Confirm');
   }
 
