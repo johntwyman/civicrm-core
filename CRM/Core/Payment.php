@@ -639,13 +639,20 @@ abstract class CRM_Core_Payment {
           );
         }
         else {
-          $text = ts('Recurring Contribution Details: %1 every %2 %3', [
-            1 => CRM_Utils_Money::format($params['amount'], $params['currency']),
-            2 => $params['frequency_interval'],
-            3 => $params['frequency_unit'],
-          ]);
           if (!empty($params['installments'])) {
-            $text .= ' ' . ts('for %1 installments', [1 => $params['installments']]) . '.';
+            $text = ts('Recurring Contribution Details: %1 every %2 %3 for %4 installments.', [
+              1 => CRM_Utils_Money::format($params['amount'], $params['currency']),
+              2 => $params['frequency_interval'],
+              3 => $params['frequency_unit'],
+              4 => $params['installments'],
+            ]);
+          }
+          else {
+            $text = ts('Recurring Contribution Details: %1 every %2 %3', [
+              1 => CRM_Utils_Money::format($params['amount'], $params['currency']),
+              2 => $params['frequency_interval'],
+              3 => $params['frequency_unit'],
+            ]);
           }
           $text = "<strong>{$text}</strong><div class='content'>";
           $text .= ts('Click the button below to cancel this commitment and stop future transactions. This does not affect contributions which have already been completed.');
@@ -886,7 +893,7 @@ abstract class CRM_Core_Payment {
         'is_required' => $isCVVRequired,
         'rules' => [
           [
-            'rule_message' => ts('Please enter a valid value for your card security code. This is usually the last 3-4 digits on the card\'s signature panel.'),
+            'rule_message' => ts("Please enter a valid value for your card security code. This is usually the last 3-4 digits on the card's signature panel."),
             'rule_name' => 'integer',
             'rule_parameters' => NULL,
           ],
@@ -1675,13 +1682,6 @@ abstract class CRM_Core_Payment {
     // possible we may get more. Hence, iterate through all instances ..
 
     while ($dao->fetch()) {
-      // Check pp is extension - is this still required - surely the singleton below handles it.
-      $ext = CRM_Extension_System::singleton()->getMapper();
-      if ($ext->isExtensionKey($dao->class_name)) {
-        $paymentClass = $ext->keyToClass($dao->class_name, 'payment');
-        require_once $ext->classToPath($paymentClass);
-      }
-
       $processorInstance = System::singleton()->getById($dao->processor_id);
 
       // Should never be empty - we already established this processor_id exists and is active.

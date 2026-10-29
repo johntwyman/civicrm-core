@@ -1998,8 +1998,8 @@ WHERE  id = %4
 ";
       $params = [
         1 => [CRM_Utils_String::ellipsify($values['addressee'], 255), 'String'],
-        2 => [$values['postalGreeting'], 'String'],
-        3 => [$values['emailGreeting'], 'String'],
+        2 => [CRM_Utils_String::ellipsify($values['postalGreeting'], 255), 'String'],
+        3 => [CRM_Utils_String::ellipsify($values['emailGreeting'], 255), 'String'],
         4 => [$masterID, 'Integer'],
       ];
       CRM_Core_DAO::executeQuery($sql, $params);
@@ -2302,6 +2302,9 @@ LIMIT $offset, $limit
         $row = [];
 
         foreach (array_keys($sqlColumns) as $column) {
+          if (!empty($this->outputSpecification[$column]['do_not_output_to_csv'])) {
+            continue;
+          }
           $row[$column] = $dao->$column;
         }
         $componentDetails[] = $row;

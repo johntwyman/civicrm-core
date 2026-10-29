@@ -462,7 +462,9 @@ abstract class CRM_Import_Parser implements UserJobInterface {
     $totalRowCount = $totalRows = $dataSource->getRowCount(['new']);
     // The retry limit for the queue is set to 5 - allowing for a few deadlocks but we might consider
     // making this configurable at some point.
-    $queue = Civi::queue('user_job_' . $this->getUserJobID(), ['type' => 'Sql', 'error' => 'abort', 'runner' => 'task', 'user_job_id' => $this->getUserJobID(), 'retry_limit' => 5]);
+    // reset: a user job can be queued again (back to the preview, run once
+    // more) after an interactive run left its queue with status NULL.
+    $queue = Civi::queue('user_job_' . $this->getUserJobID(), ['type' => 'Sql', 'error' => 'abort', 'runner' => 'task', 'user_job_id' => $this->getUserJobID(), 'retry_limit' => 5, 'reset' => TRUE]);
     UserJob::update(FALSE)
       ->setValues([
         'queue_id.name' => 'user_job_' . $this->getUserJobID(),
@@ -1008,6 +1010,10 @@ abstract class CRM_Import_Parser implements UserJobInterface {
       }
       return $this->importableFieldsMetadata[$fieldMapName];
     }
+    if (!is_array($fieldMetadata)) {
+      CRM_Core_Session::setStatus(ts('Field not found for import %1', [1 => $fieldName]));
+      return [];
+    }
     return $fieldMetadata;
   }
 
@@ -1348,7 +1354,7 @@ abstract class CRM_Import_Parser implements UserJobInterface {
 
     while ($row = $dataSource->getRow()) {
       if ($parser->validateRow($row)) {
-        $parser->import($row);
+        $parser->importRow($row);
       }
     }
     $parser->doPostImportActions();
@@ -1481,6 +1487,46 @@ abstract class CRM_Import_Parser implements UserJobInterface {
       $this->setImportStatus($rowNumber, 'ERROR', $e->getMessage());
       return FALSE;
     }
+    catch (Throwable $e) {
+      $this->setRowError($rowNumber, $e);
+      return FALSE;
+    }
+  }
+
+  /**
+   * Import a validated row, recording an error the parser did not handle against that row.
+   *
+   * @param array $row
+   *
+   * @throws \Civi\Core\Exception\DBQueryException
+   */
+  public function importRow(array $row): void {
+    try {
+      $this->import($row);
+    }
+    catch (\Civi\Core\Exception\DBQueryException $e) {
+      // Database failures (deadlock, lost connection) fail the batch so the queue can retry it.
+      throw $e;
+    }
+    catch (Throwable $e) {
+      $this->setRowError((int) $row['_id'], $e);
+    }
+  }
+
+  /**
+   * Log an unexpected error and mark the row as failed, so the remaining rows still run.
+   *
+   * @param int $rowNumber
+   * @param \Throwable $e
+   */
+  private function setRowError(int $rowNumber, Throwable $e): void {
+    Civi::log('import')->error('Import of row {row} in job {user_job_id} failed: {message}', [
+      'row' => $rowNumber,
+      'user_job_id' => $this->getUserJobID(),
+      'message' => $e->getMessage(),
+      'exception' => $e,
+    ]);
+    $this->setImportStatus($rowNumber, 'ERROR', $e->getMessage());
   }
 
   protected function removeEmptyValues($array) {

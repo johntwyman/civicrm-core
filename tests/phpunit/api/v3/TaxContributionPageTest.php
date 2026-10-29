@@ -51,7 +51,7 @@ class api_v3_TaxContributionPageTest extends CiviUnitTestCase {
     $this->ids['PaymentProcessor'] = $this->paymentProcessorCreate();
     $this->params = [
       'title' => 'Test Contribution Page',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'payment_processor' => $this->ids['PaymentProcessor'],
       'currency' => 'NZD',
       'goal_amount' => 350,
@@ -68,8 +68,8 @@ class api_v3_TaxContributionPageTest extends CiviUnitTestCase {
       'is_active' => 1,
       'help_pre' => 'Where does your goat sleep',
       'help_post' => 'thank you for your time',
-      'extends' => 2,
-      'financial_type_id' => 3,
+      'extends' => 'CiviContribute',
+      'financial_type_id' => $this->getFinancialTypeID('Campaign Contribution'),
       'is_quick_config' => 0,
       'is_reserved' => 0,
     ];
@@ -242,14 +242,14 @@ class api_v3_TaxContributionPageTest extends CiviUnitTestCase {
       'skipLineItem' => 1,
       'api.line_item.create' => [
         [
-          'price_field_id' => $this->ids['price_field'],
+          'price_field_id' => $this->ids['price_field'][0],
           'qty' => 1,
           'line_total' => '100',
           'unit_price' => '100',
           'financial_type_id' => $this->financialTypeID,
         ],
         [
-          'price_field_id' => $this->ids['price_field'],
+          'price_field_id' => $this->ids['price_field'][0],
           'qty' => 1,
           'line_total' => '300',
           'unit_price' => '300',
@@ -464,21 +464,21 @@ class api_v3_TaxContributionPageTest extends CiviUnitTestCase {
     ];
     if ($context !== 'online' && $context !== 'payLater') {
       $this->assertDBCompareValues('CRM_Financial_DAO_FinancialTrxn', $trxnParams, [
-        'to_financial_account_id' => 6,
+        'to_financial_account_id' => $this->getFinancialAccountID('Deposit Bank Account'),
         'total_amount' => 120,
         'status_id' => 1,
       ]);
     }
     if ($context === 'online') {
       $this->assertDBCompareValues('CRM_Financial_DAO_FinancialTrxn', $trxnParams, [
-        'to_financial_account_id' => 12,
+        'to_financial_account_id' => $this->getFinancialAccountID('Payment Processor Account'),
         'total_amount' => 120,
         'status_id' => 1,
       ]);
     }
     elseif ($context === 'payLater') {
       $this->assertDBCompareValues('CRM_Financial_DAO_FinancialTrxn', $trxnParams, [
-        'to_financial_account_id' => 7,
+        'to_financial_account_id' => $this->getFinancialAccountID('Accounts Receivable'),
         'total_amount' => 120,
         'status_id' => 2,
       ]);
@@ -548,7 +548,7 @@ class api_v3_TaxContributionPageTest extends CiviUnitTestCase {
    */
   protected function getFinancialTransactionsForContribution($contributionID): Result {
     return EntityFinancialTrxn::get()
-      ->addWhere('id', '=', $contributionID)
+      ->addWhere('entity_id', '=', $contributionID)
       ->addWhere('entity_table', '=', 'civicrm_contribution')
       ->addSelect('*')->execute();
   }

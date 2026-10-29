@@ -267,6 +267,7 @@ class Submit extends AbstractProcessor {
 
     return self::getRequiredFieldError($event, $fieldName, $fieldDefn, $attributes, $value) ??
       self::getMaxlengthError($fieldName, $fieldDefn, $value) ??
+      self::getMinlengthError($fieldName, $fieldDefn, $value) ??
       self::getMinMaxError($fieldName, $fieldDefn, $value);
   }
 
@@ -333,6 +334,24 @@ class Submit extends AbstractProcessor {
     if ($maxlength && mb_strlen($value) > $maxlength) {
       $label = $fieldDefn['label'] ?? $fieldDefn['title'] ?? $fieldName;
       return E::ts('%1 has a max length of %2.', [1 => $label, 2 => $maxlength]);
+    }
+  }
+
+  /**
+   * If a string value is shorter than the minlength, return an error message.
+   */
+  private static function getMinlengthError(string $fieldName, array $fieldDefn, $value) {
+    // If we have no value, no need to check minlength (`required` has already been checked)
+    if (!$value || !is_string($value) || ($fieldDefn['data_type'] ?? '') !== 'String') {
+      return NULL;
+    }
+
+    $minlength = $fieldDefn['input_attrs']['minlength'] ?? NULL;
+
+    // Use mb_strlen() which better matches the behavior of javascript's String.length
+    if ($minlength && mb_strlen($value) < $minlength) {
+      $label = $fieldDefn['label'] ?? $fieldDefn['title'] ?? $fieldName;
+      return E::ts('%1 has a min length of %2.', [1 => $label, 2 => $minlength]);
     }
   }
 
@@ -692,9 +711,15 @@ class Submit extends AbstractProcessor {
       // Forward FK e.g. Event.loc_block_id => LocBlock
       $forwardFkField = self::getFkField($mainEntity['type'], $joinEntityName);
       if ($forwardFkField && $values) {
-        // Add id to values for update op, but only if id is not already on the form
-        if ($whereClause && $joinAllowedAction['update'] && empty($mainEntity['joins'][$joinEntityName]['fields'][$joinIdField])) {
-          $values[0][$joinIdField] = $whereClause[0][2];
+        $existingId = $whereClause[0][2] ?? NULL;
+        $hasOtherFields = count(array_diff(array_keys($values[0]), [$joinIdField])) > 0;
+        // Add id to values for update op if id is not on the form
+        if ($existingId && $joinAllowedAction['update'] && empty($mainEntity['joins'][$joinEntityName]['fields'][$joinIdField])) {
+          $values[0][$joinIdField] = $existingId;
+        }
+        // If modifying fields, do not allow updating a record that does not belong to this entity
+        if ($hasOtherFields && !empty($values[0][$joinIdField]) && (!$joinAllowedAction['update'] || $values[0][$joinIdField] != $existingId)) {
+          unset($values[0][$joinIdField]);
         }
         $result = civicrm_api4($joinEntityName, 'save', [
           // Disable permission checks because the main entity has already been vetted
@@ -715,9 +740,16 @@ class Submit extends AbstractProcessor {
         // In update mode, set ids of existing values
         if ($joinAllowedAction['update']) {
           $existingJoinValues = $event->getApiRequest()->loadJoins($joinEntityName, $mainEntity, $entityId, $index);
+          $existingIds = array_filter(array_column($existingJoinValues, $joinIdField));
           foreach ($existingJoinValues as $joinIndex => $existingJoin) {
             if (!empty($existingJoin[$joinIdField]) && !empty($values[$joinIndex])) {
               $values[$joinIndex][$joinIdField] = $existingJoin[$joinIdField];
+            }
+          }
+          // Do not allow updating a record that does not belong to this entity
+          foreach ($values as $key => $value) {
+            if (!empty($value[$joinIdField]) && !in_array($value[$joinIdField], $existingIds)) {
+              unset($values[$key][$joinIdField]);
             }
           }
         }

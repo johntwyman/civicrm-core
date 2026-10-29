@@ -17,10 +17,6 @@ a.af-api4-action-idle {
 .af-container.af-layout-inline {
   flex-direction: row;
 }
-/* Hidden fields */
-.af-field-type-hidden {
-  display: none;
-}
 .af-container.af-layout-cols > .af-title {
   flex: 0 0 100%;
 }
@@ -168,4 +164,28 @@ af-search-param-sets dl > div > dt {
 
 .crm-container ul.crm-checkbox-list.checkbox-plain li {
   background-color: inherit;
+}
+
+/* Admin dropdown links for editing a content block (e.g. an Afform or a Search Display) */
+#bootstrap-theme .crm-admin-block-context-dropdown {
+  position: absolute;
+  right: 0;
+  bottom: 1rem;
+}
+#bootstrap-theme .crm-admin-block-context-dropdown > button {
+  background: transparent;
+  color: var(--crm-text-color, black);
+  border-radius: 2rem;
+  height: inherit;
+  padding: 0 !important;
+  border: 0;
+  opacity: 0.6;
+}
+#bootstrap-theme .crm-admin-block-context-dropdown.open button,
+#bootstrap-theme .crm-admin-block-context-dropdown button:hover,
+#bootstrap-theme .crm-admin-block-context-dropdown button:focus {
+  background: transparent;
+  color: var(--crm-text-color, black);
+  opacity: 1;
+  box-shadow: none !important; /* vs dropdown-toggle */
 }

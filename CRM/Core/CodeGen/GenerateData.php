@@ -2199,6 +2199,12 @@ ORDER BY cc.id; ";
         'is_payment' => 1,
       ];
       $trxn = CRM_Core_BAO_FinancialTrxn::writeRecord($trxnParams);
+      CRM_Financial_BAO_EntityFinancialTrxn::writeRecord([
+        'entity_table' => 'civicrm_contribution',
+        'entity_id' => $result->contribution_id,
+        'financial_trxn_id' => $trxn->id,
+        'amount' => $result->total_amount,
+      ]);
       $financialItem = [
         'transaction_date' => CRM_Utils_Date::processDate($result->receive_date),
         'amount' => $result->total_amount,
@@ -2211,14 +2217,13 @@ ORDER BY cc.id; ";
         'financial_account_id' => $result->financial_account_id,
       ];
       $trxnId['id'] = $trxn->id;
-      $financialItem = CRM_Financial_BAO_FinancialItem::create($financialItem);
-      $entityFinancialTrxnRecord = [
+      $financialItem = CRM_Financial_BAO_FinancialItem::writeRecord($financialItem);
+      CRM_Financial_BAO_EntityFinancialTrxn::writeRecord([
         'entity_table' => "civicrm_financial_item",
         'entity_id' => $financialItem->id,
         'financial_trxn_id' => $trxn->id,
         'amount' => $result->total_amount,
-      ];
-      CRM_Financial_BAO_EntityFinancialTrxn::writeRecord($entityFinancialTrxnRecord);
+      ]);
     }
   }
 

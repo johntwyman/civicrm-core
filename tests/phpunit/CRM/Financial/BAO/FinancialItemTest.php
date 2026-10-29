@@ -12,6 +12,7 @@
 use Civi\Api4\Contribution;
 use Civi\Api4\EntityFinancialTrxn;
 use Civi\Api4\FinancialItem;
+use Civi\Api4\LineItem;
 
 /**
  * Class CRM_Financial_BAO_FinancialItemTest
@@ -49,20 +50,20 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $contribution = $this->callAPISuccess('Contribution', 'create', [
       'contact_id' => $this->individualCreate(),
       'total_amount' => $price,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_active' => 1,
       'skipLineItem' => 1,
     ]);
     $lParams = [
       'entity_id' => $contribution['id'],
       'entity_table' => 'civicrm_contribution',
-      'price_field_id' => 1,
+      'price_field_id' => $this->getDefaultContributionPriceFieldID(),
       'qty' => 1,
       'label' => 'Contribution Amount',
       'unit_price' => $price,
       'line_total' => $price,
-      'price_field_value_id' => 1,
-      'financial_type_id' => 1,
+      'price_field_value_id' => $this->getDefaultContributionPriceFieldValueID(),
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
 
     $lineItem = CRM_Price_BAO_LineItem::create($lParams);
@@ -90,7 +91,7 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $cParams = [
       'contact_id' => $contactID,
       'total_amount' => $price,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_active' => 1,
       'skipLineItem' => 1,
     ];
@@ -99,13 +100,13 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $lParams = [
       'entity_id' => $contribution['id'],
       'entity_table' => 'civicrm_contribution',
-      'price_field_id' => 1,
+      'price_field_id' => $this->getDefaultContributionPriceFieldID(),
       'qty' => 1,
       'label' => 'Contribution Amount',
       'unit_price' => $price,
       'line_total' => $price,
-      'price_field_value_id' => 1,
-      'financial_type_id' => 1,
+      'price_field_value_id' => $this->getDefaultContributionPriceFieldValueID(),
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
 
     $lineItem = CRM_Price_BAO_LineItem::create($lParams);
@@ -113,7 +114,7 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
       'contact_id' => $contactID,
       'description' => 'Contribution Amount',
       'amount' => $price,
-      'financial_account_id' => 1,
+      'financial_account_id' => $this->getFinancialAccountID('Donation'),
       'status_id' => 1,
       'transaction_date' => date('YmdHis'),
       'entity_id' => $lineItem->id,
@@ -155,7 +156,7 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $financialTrxn->save();
     $params = [
       'entity_table' => 'civicrm_contribution',
-      'entity_id' => 1,
+      'entity_id' => $this->contributionCreate(['contact_id' => $this->individualCreate()]),
       'financial_trxn_id' => $financialTrxn->id,
       'amount' => $amount,
     ];
@@ -183,7 +184,7 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $contribution = $this->createTestEntity('Contribution', [
       'contact_id' => $contactId,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -200,7 +201,8 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
       ->setValues(['total_amount' => 300.00])
       ->execute();
 
-    $financialItem = CRM_Financial_BAO_FinancialItem::getPreviousFinancialItem($contribution['id']);
+    $lineItemID = LineItem::get(FALSE)->addWhere('contribution_id', '=', $contribution['id'])->execute()->single()['id'];
+    $financialItem = CRM_Financial_BAO_FinancialItem::getPreviousFinancialItem($lineItemID);
     $result = FinancialItem::get(FALSE)
       ->addWhere('id', '=', $financialItem['id'])
       ->addSelect('amount')
@@ -223,10 +225,10 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $this->setCurrencySeparators($thousandSeparator);
     $contactId = $this->individualCreate();
     $this->enableTaxAndInvoicing();
-    $this->addTaxAccountToFinancialType(1);
+    $this->addTaxAccountToFinancialType($this->getFinancialTypeID('Donation'));
     $this->getTestForm('CRM_Contribute_Form_Contribution', [
       'total_amount' => 100,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $contactId,
       'contribution_status_id' => 1,
       'price_set_id' => 0,
@@ -235,7 +237,8 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
       ->addWhere('contact_id', '=', $contactId)
       ->addSelect('id')
       ->execute()->single();
-    $financialItem = CRM_Financial_BAO_FinancialItem::getPreviousFinancialItem($contribution['id']);
+    $lineItemID = LineItem::get(FALSE)->addWhere('contribution_id', '=', $contribution['id'])->execute()->single()['id'];
+    $financialItem = CRM_Financial_BAO_FinancialItem::getPreviousFinancialItem($lineItemID);
     $result = FinancialItem::get(FALSE)
       ->addWhere('id', '=', $financialItem['id'])
       ->addSelect('description', 'status_id', 'amount', 'financial_account_id')
@@ -243,7 +246,7 @@ class CRM_Financial_BAO_FinancialItemTest extends CiviUnitTestCase {
     $this->assertEquals('Contribution Amount', $result['description']);
     $this->assertEquals(1, $result['status_id']);
     $this->assertEquals(100.00, $result['amount']);
-    $this->assertEquals(1, $result['financial_account_id']);
+    $this->assertEquals($this->getFinancialAccountID('Donation'), $result['financial_account_id']);
   }
 
 }

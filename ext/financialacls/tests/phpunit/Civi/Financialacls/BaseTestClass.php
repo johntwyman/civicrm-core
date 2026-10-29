@@ -13,6 +13,7 @@ use Civi\Test\CiviEnvBuilder;
 use Civi\Test\HeadlessInterface;
 use Civi\Core\HookInterface;
 use Civi\Test\ContactTestTrait;
+use Civi\Test\LookupHelperTrait;
 use Civi\Test\Api3TestTrait;
 use PHPUnit\Framework\TestCase;
 
@@ -23,6 +24,7 @@ class BaseTestClass extends TestCase implements HeadlessInterface, HookInterface
 
   use ContactTestTrait;
   use Api3TestTrait;
+  use LookupHelperTrait;
 
   /**
    * IDs set up for test.
@@ -93,7 +95,7 @@ class BaseTestClass extends TestCase implements HeadlessInterface, HookInterface
       'title' => 'Price Set',
       'name' => 'price_set',
       'financial_type_id.name' => 'Event Fee',
-      'extends' => 1,
+      'extends:name' => ['CiviEvent'],
     ], $identifier);
     $this->createTestEntity('PriceField', [
       'label' => 'Price Field',

@@ -78,6 +78,11 @@ class CRM_Contribute_Import_Parser_ContributionTest extends CiviUnitTestCase {
       ->addWhere('rule_table', '!=', 'civicrm_email')
       ->addWhere('dedupe_rule_group_id.name', '=', 'IndividualUnsupervised')->execute();
     Civi::settings()->set('enableBackgroundQueue', $this->enableBackgroundQueueOriginalValue);
+    foreach (['pledge.csv', 'contributions_update.csv'] as $csv) {
+      if (file_exists(__DIR__ . '/data/' . $csv)) {
+        unlink(__DIR__ . '/data/' . $csv);
+      }
+    }
     parent::tearDown();
   }
 
@@ -462,6 +467,8 @@ class CRM_Contribute_Import_Parser_ContributionTest extends CiviUnitTestCase {
   public function testPledgeImport(): void {
     $contactID = $this->individualCreate(['email' => 'mum@example.com']);
     $pledgeID = $this->pledgeCreate(['contact_id' => $contactID]);
+    // The csv references the pledge by id, so it is written once the pledge exists.
+    file_put_contents(__DIR__ . '/data/pledge.csv', "Email,Amount,Pledge ID,Receive date,Financial Type\nmum@example.com,20,$pledgeID,2022-01-07,Donation\n");
     $this->importCSV('pledge.csv', [
       ['name' => 'Contact.email_primary.email'],
       ['name' => 'Contribution.total_amount'],
@@ -861,6 +868,69 @@ class CRM_Contribute_Import_Parser_ContributionTest extends CiviUnitTestCase {
   }
 
   /**
+   * A PHP error while validating one row marks that row as failed and the other rows are imported.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testValidateRowErrorDoesNotAbortImport(): void {
+    $this->setUpRowErrorImport('validate', 'sapphire');
+    $this->importCSV('contributions_match_external_id.csv', $this->getRowErrorMapping());
+    $rows = (array) Import::get($this->userJobID)->addOrderBy('_id')->execute();
+    $this->assertEquals(['ERROR', 'Ruh-roh'], [$rows[0]['_status'], $rows[0]['_status_message']]);
+    $this->assertEquals('IMPORTED', $rows[1]['_status'], $rows[1]['_status_message']);
+  }
+
+  /**
+   * A PHP error while importing one row is recorded against that row, by the queue and by the api import action.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testImportRowErrorDoesNotAbortImport(): void {
+    $this->setUpRowErrorImport('import', 'ruby');
+    $this->importCSV('contributions_match_external_id.csv', $this->getRowErrorMapping());
+    $rows = (array) Import::get($this->userJobID)->addOrderBy('_id')->execute();
+    $this->assertEquals('IMPORTED', $rows[0]['_status'], $rows[0]['_status_message']);
+    $this->assertEquals(['ERROR', 'Ruh-roh'], [$rows[1]['_status'], $rows[1]['_status_message']]);
+
+    Import::update($this->userJobID)->setValues(['_status' => 'NEW', '_status_message' => '', '_entity_id' => NULL])
+      ->addWhere('_id', '>', 0)->execute();
+    Import::import($this->userJobID)->execute();
+    $rows = (array) Import::get($this->userJobID)->addOrderBy('_id')->execute();
+    $this->assertEquals('IMPORTED', $rows[0]['_status'], $rows[0]['_status_message']);
+    $this->assertEquals(['ERROR', 'Ruh-roh'], [$rows[1]['_status'], $rows[1]['_status_message']]);
+  }
+
+  /**
+   * Create the contacts for contributions_match_external_id.csv and fail one row with a PHP error.
+   *
+   * @param string $context
+   *   The importAlterMappedRow context to fail in, validate or import.
+   * @param string $externalIdentifier
+   *   The row to fail.
+   */
+  private function setUpRowErrorImport(string $context, string $externalIdentifier): void {
+    $this->individualCreate(['external_identifier' => 'ruby']);
+    $this->individualCreate(['external_identifier' => 'sapphire']);
+    CRM_Utils_Hook::singleton()->setHook('civicrm_importAlterMappedRow', function($importType, $hookContext, &$mappedRow, $rowValues) use ($context, $externalIdentifier) {
+      if ($hookContext === $context && in_array($externalIdentifier, $rowValues, TRUE)) {
+        throw new TypeError('Ruh-roh');
+      }
+    });
+  }
+
+  /**
+   * @return array
+   */
+  private function getRowErrorMapping(): array {
+    return [
+      ['name' => 'Contact.external_identifier'],
+      ['name' => 'Contribution.total_amount'],
+      ['name' => 'Contribution.receive_date'],
+      ['name' => 'Contribution.financial_type_id'],
+    ];
+  }
+
+  /**
    * Run the import parser.
    *
    * @param array $originalValues
@@ -952,13 +1022,21 @@ class CRM_Contribute_Import_Parser_ContributionTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testImportUpdateExisting(): void {
-    $this->contributionCreate([
+    $contributionID = $this->contributionCreate([
       'contact_id' => $this->individualCreate(),
       'trxn_id' => 'abc',
       'invoice_id' => '65',
       'total_amount' => 8,
       'financial_type_id:name' => 'Event Fee',
     ]);
+    // The csv references the contribution by id, so it is written once the contribution exists.
+    file_put_contents(__DIR__ . '/data/contributions_update.csv', "Contribution ID,Invoice ID,Trxn ID,Contact ID,Total Amount,Receive Date,Financial Type,Reason,Row Status
+$contributionID,67,abc,8,999,2008-09-20,Donation,Invoice ID mismatch,invalid
+$contributionID,67,abcd,8,999,2008-09-20,Donation,Trxn ID mismatch,invalid
+$contributionID,65,abc,3,999,2008-09-20,Donation,All fields OK,valid
+,65,abc,3,999,2008-09-20,Donation,Only Invoice ID OK,valid
+$contributionID,,\"\",3,99,2008-09-20,Donation,Only Contribution ID OK,valid
+");
     $mapping = [
       ['name' => 'Contribution.id'],
       ['name' => 'Contribution.invoice_id'],

@@ -227,6 +227,7 @@ class CRM_Core_BAO_Navigation extends CRM_Core_DAO_Navigation {
           'permission' => $navigationMenu->permission,
           'operator' => $navigationMenu->permission_operator,
           'separator' => $navigationMenu->has_separator,
+          'target' => $navigationMenu->target,
           'parentID' => $navigationMenu->parent_id,
           'navID' => $navigationMenu->id,
           'active' => $navigationMenu->is_active,
@@ -569,18 +570,6 @@ class CRM_Core_BAO_Navigation extends CRM_Core_DAO_Navigation {
   }
 
   /**
-   * Function to process rename action for tree.
-   *
-   * @param int $nodeID
-   * @param $label
-   * @deprecated  - use API
-   */
-  public static function processRename($nodeID, $label) {
-    CRM_Core_Error::deprecatedFunctionWarning('writeRecord');
-    self::writeRecord(['id' => $nodeID, 'label' => $label]);
-  }
-
-  /**
    * Process delete action for tree.
    *
    * @param int $nodeID
@@ -751,7 +740,7 @@ class CRM_Core_BAO_Navigation extends CRM_Core_DAO_Navigation {
       $rows[$component_id]['reports'][$dao->id] = [
         'title' => $dao->title,
         'url' => "civicrm/report/instance/{$dao->id}",
-        'permission' => $dao->permission,
+        'permission' => "@report:{$dao->id}",
       ];
     }
     return $rows;

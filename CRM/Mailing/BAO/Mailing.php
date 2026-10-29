@@ -29,14 +29,6 @@ class CRM_Mailing_BAO_Mailing extends CRM_Mailing_DAO_Mailing implements \Civi\C
    * or appended to the body.
    * @var array
    */
-  private $preparedTemplates = NULL;
-
-  /**
-   * An array that holds the complete templates
-   * including any headers or footers that need to be prepended
-   * or appended to the body.
-   * @var array
-   */
   private $templates = NULL;
 
   /**
@@ -62,12 +54,6 @@ class CRM_Mailing_BAO_Mailing extends CRM_Mailing_DAO_Mailing implements \Civi\C
    * @var CRM_Mailing_BAO_MailingComponent
    */
   private $footer = NULL;
-
-  /**
-   * Cached BAO for the domain.
-   * @var int
-   */
-  private $_domain = NULL;
 
   /**
    * This function retrieve recipients of selected mailing groups.
@@ -504,38 +490,6 @@ class CRM_Mailing_BAO_Mailing extends CRM_Mailing_DAO_Mailing implements \Civi\C
   }
 
   /**
-   * Returns the regex patterns that are used for preparing the text and html templates.
-   *
-   * @param bool $onlyHrefs
-   *
-   * @return array|string
-   */
-  private function getPatterns($onlyHrefs = FALSE) {
-
-    $patterns = [];
-
-    $protos = '(https?|ftp|mailto)';
-    $letters = '\w';
-    $gunk = '\{\}/#~:.?+=&;%@!\,\-\|\(\)\*';
-    $punc = '.:?\-';
-    $any = "{$letters}{$gunk}{$punc}";
-    if ($onlyHrefs) {
-      $pattern = "\\bhref[ ]*=[ ]*([\"'])?(($protos:[$any]+?(?=[$punc]*[^$any]|$)))([\"'])?";
-    }
-    else {
-      $pattern = "\\b($protos:[$any]+?(?=[$punc]*[^$any]|$))";
-    }
-
-    $patterns[] = $pattern;
-    $patterns[] = '\\\\\{\w+\.\w+\\\\\}|\{\{\w+\.\w+\}\}';
-    $patterns[] = '\{\w+\.\w+\}';
-
-    $patterns = '{' . implode('|', $patterns) . '}imu';
-
-    return $patterns;
-  }
-
-  /**
    * Retrieve a ref to an array that holds the email and text templates for this email
    * assembles the complete template including the header and footer
    * that the user has uploaded or declared (if they have done that)
@@ -838,7 +792,6 @@ ORDER BY   civicrm_email.is_bulkmail DESC
   public static function getVerpAndUrls($job_id, $event_queue_id, $hash) {
     // create a skeleton object and set its properties that are required by getVerpAndUrlsAndHeaders()
     $bao = new CRM_Mailing_BAO_Mailing();
-    $bao->_domain = CRM_Core_BAO_Domain::getDomain();
     $bao->from_name = $bao->from_email = $bao->subject = '';
 
     // use $bao's instance method to get verp and urls
@@ -1110,7 +1063,13 @@ ORDER BY   civicrm_email.is_bulkmail DESC
     $mailing = self::add($params);
 
     // update mailings with hash values
+    $newHash = empty($mailing->hash);
     CRM_Contact_BAO_Contact_Utils::generateChecksum($mailing->id, NULL, NULL, NULL, 'mailing', 16);
+    if ($newHash) {
+      // Writing the hash can move modified_date, which callers send back to detect a stale save.
+      $mailing->modified_date = CRM_Core_DAO::singleValueQuery('SELECT modified_date FROM civicrm_mailing WHERE id = %1',
+        [1 => [$mailing->id, 'Integer']]);
+    }
 
     $groupTableName = CRM_Contact_BAO_Group::getTableName();
 

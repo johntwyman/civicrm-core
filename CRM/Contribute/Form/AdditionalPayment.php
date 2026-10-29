@@ -252,7 +252,7 @@ class CRM_Contribute_Form_AdditionalPayment extends CRM_Contribute_Form_Abstract
         ts('Payment Method'),
         ['' => ts('- select -')] + CRM_Contribute_BAO_Contribution::buildOptions('payment_instrument_id', 'create', ['filter' => 0]),
         TRUE,
-        ['onChange' => "return showHideByValue('payment_instrument_id','4','checkNumber','table-row','select',false);", 'class' => 'crm-select2']
+        ['class' => 'crm-select2']
       );
 
       $this->add('text', 'check_number', ts('Check Number'), $attributes['financial_trxn_check_number']);
@@ -405,16 +405,9 @@ class CRM_Contribute_Form_AdditionalPayment extends CRM_Contribute_Form_Abstract
     ]);
 
     if ($paymentParams['amount'] > 0.0) {
-      if (!empty($this->contributionID)) {
-        if (empty($paymentParams['description'])) {
-          $paymentParams['contributionID'] = $this->contributionID;
-          $paymentParams['description'] = CRM_Core_DAO::getFieldValue('CRM_Contribute_DAO_Contribution', $this->_contributionId, 'source');
-        }
-
-        if (empty($paymentParams['financial_type_id'])) {
-          $financialTypeID = CRM_Core_DAO::getFieldValue('CRM_Contribute_DAO_Contribution', $this->_contributionId, 'financial_type_id');
-          $paymentParams['financial_type_id'] = CRM_Financial_BAO_FinancialAccount::getAccountingCode($financialTypeID);
-        }
+      $paymentParams['contributionID'] = $this->getContributionID();
+      if (empty($paymentParams['description'])) {
+        $paymentParams['description'] = CRM_Core_DAO::getFieldValue('CRM_Contribute_DAO_Contribution', $this->getContributionID(), 'source');
       }
 
       try {

@@ -27,12 +27,12 @@ abstract class CRM_Utils_Check_Component {
    * @throws \Civi\API\Exception\UnauthorizedException
    */
   public function getChecksConfig() {
-    if (!isset(Civi::$statics[__FUNCTION__])) {
-      Civi::$statics[__FUNCTION__] = (array) StatusPreference::get(FALSE)
+    if (!isset(Civi::$statics['CRM_Utils_Check']['checksConfig'])) {
+      Civi::$statics['CRM_Utils_Check']['checksConfig'] = (array) StatusPreference::get(FALSE)
         ->addWhere('domain_id', '=', 'current_domain')
         ->execute()->indexBy('name');
     }
-    return Civi::$statics[__FUNCTION__];
+    return Civi::$statics['CRM_Utils_Check']['checksConfig'];
   }
 
   /**
@@ -73,7 +73,12 @@ abstract class CRM_Utils_Check_Component {
     foreach ($this->getAllChecks() as $method) {
       // Note that we should check if the test is disabled BEFORE running it in case it's disabled for performance.
       if ($this->isRequested($method, $requestedChecks) && ($includeDisabled || !$this->isDisabled($method))) {
-        $messages = array_merge($messages, $this->$method($includeDisabled));
+        try {
+          $messages = array_merge($messages, $this->$method($includeDisabled));
+        }
+        catch (Throwable $e) {
+          $messages[] = CRM_Utils_Check::failedCheckMessage($method, $e);
+        }
       }
     }
     return $messages;

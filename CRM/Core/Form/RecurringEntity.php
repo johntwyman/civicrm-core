@@ -75,6 +75,11 @@ class CRM_Core_Form_RecurringEntity {
   public static function preProcess($entityTable) {
     self::$_entityId = (int) CRM_Utils_Request::retrieve('id', 'Positive');
     self::$_entityTable = $entityTable;
+    // Reset values that may have been set for a previously processed entity.
+    self::$_hasParent = FALSE;
+    self::$_parentEntityId = NULL;
+    self::$_scheduleReminderID = NULL;
+    self::$_scheduleReminderDetails = NULL;
 
     if (self::$_entityId && $entityTable) {
       $checkParentExistsForThisId = CRM_Core_BAO_RecurringEntity::getParentFor(self::$_entityId, $entityTable);
@@ -271,7 +276,7 @@ class CRM_Core_Form_RecurringEntity {
             $entityStartDate = CRM_Utils_Date::processDate($values['repetition_start_date']);
             $end = CRM_Utils_Date::processDate($values['repeat_absolute_date']);
             if (($end < $entityStartDate) && ($end != 0)) {
-              $errors['repeat_absolute_date'] = ts('End date should be after current entity\'s start date');
+              $errors['repeat_absolute_date'] = ts("End date should be after current entity's start date");
             }
           }
           else {

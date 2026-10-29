@@ -45,14 +45,12 @@ class AfformContributionTest extends TestCase implements HeadlessInterface {
 
     \Civi\Api4\PriceSet::save(FALSE)
       ->addRecord([
-        // participant
-        'extends' => [1],
+        'extends:name' => ['CiviEvent'],
         'name' => 'participant_fields',
         'title' => 'Participant Options',
       ])
       ->addRecord([
-         // contribution
-        'extends' => [2],
+        'extends:name' => ['CiviContribute'],
         'name' => 'donation_options',
         'title' => 'Donation Options',
       ])
@@ -111,7 +109,7 @@ class AfformContributionTest extends TestCase implements HeadlessInterface {
     <af-form ctrl="afform">
       <af-entity type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="FBAC" />
       <af-entity type="Participant" name="Participant1" label="Participant 1" data="{contact_id: 'Individual1'}" actions="{create: true, update: true}" security="FBAC" />
-      <af-entity type="Contribution" name="Contribution1" label="Contribution 1" data="{contact_id: 'Individual1', financial_type_id: 1}" actions="{create: true, update: false}" security="FBAC" />
+      <af-entity type="Contribution" name="Contribution1" label="Contribution 1" data="{contact_id: 'Individual1', 'financial_type_id:name': 'Donation'}" actions="{create: true, update: false}" security="FBAC" />
       <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
         <div class="af-container">
           <af-field name="first_name" />
@@ -149,12 +147,12 @@ class AfformContributionTest extends TestCase implements HeadlessInterface {
 
   public function tearDown(): void {
     \Civi\Api4\PriceFieldValue::delete(FALSE)
-      ->addWhere('name', 'IN', ['in_person', 'online', 'admin_only'])
+      ->addWhere('name', 'IN', ['in_person', 'online', 'admin_only', 'unit'])
       //->addWhere('id', '>', 0)
       ->execute();
 
     \Civi\Api4\PriceField::delete(FALSE)
-      ->addWhere('name', 'IN', ['ticket_option', 'additional_donation'])
+      ->addWhere('name', 'IN', ['ticket_option', 'additional_donation', 'donation_qty'])
       //->addWhere('id', '>', 0)
       ->execute();
 
@@ -337,6 +335,42 @@ class AfformContributionTest extends TestCase implements HeadlessInterface {
     $this->assertContains($adminPfvId, $restricted);
     // The public "In person" value must NOT be treated as restricted.
     $this->assertNotContains($this->inPersonPriceFieldValueId, $restricted);
+  }
+
+  /**
+   * An `is_enter_qty` field whose only PriceFieldValue has been deactivated
+   * (rather than never existing) must not break getPriceFieldSpecs() for
+   * every other field - the field itself is simply unusable without a unit
+   * amount, so it is excluded from the specs (dev/core#6838).
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testEnterQtyFieldWithNoActiveValueIsSkipped(): void {
+    $qtyField = \Civi\Api4\PriceField::create(FALSE)
+      ->addValue('name', 'donation_qty')
+      ->addValue('label', 'Donation Qty')
+      ->addValue('html_type', 'Text')
+      ->addValue('is_enter_qty', TRUE)
+      ->addValue('price_set_id:name', 'donation_options')
+      ->execute()
+      ->single();
+
+    \Civi\Api4\PriceFieldValue::create(FALSE)
+      ->addValue('name', 'unit')
+      ->addValue('label', 'Unit')
+      ->addValue('amount', 1)
+      ->addValue('price_field_id', $qtyField['id'])
+      ->addValue('financial_type_id:name', 'Event Fee')
+      ->addValue('is_active', FALSE)
+      ->execute();
+
+    unset(\Civi::$statics[PriceFieldUtils::class]);
+
+    $specs = PriceFieldUtils::getPriceFieldSpecs();
+
+    $this->assertArrayNotHasKey('donation_options.donation_qty', $specs['Contribution']);
+    // The sibling field in the same PriceSet must still be present.
+    $this->assertArrayHasKey('donation_options.additional_donation', $specs['Contribution']);
   }
 
   /**

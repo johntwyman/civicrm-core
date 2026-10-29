@@ -726,7 +726,7 @@ abstract class AbstractRunAction extends \Civi\Api4\Generic\AbstractAction {
    * @throws \CRM_Core_Exception
    */
   protected function formatLink(array $link, array $data, bool $allowMultiple = FALSE, ?string $text = NULL, ?int $index = NULL): ?array {
-    $useApi = (!empty($link['entity']) && !empty($link['action']));
+    $useApi = (!empty($link['entity']) && !empty($link['action']) && empty($link['task']));
     // When rendering multiple links, gather multivalued token values
     if (isset($index)) {
       foreach ($data as $key => $value) {
@@ -797,7 +797,7 @@ abstract class AbstractRunAction extends \Civi\Api4\Generic\AbstractAction {
 
     $result = NULL;
     if ($routeName = parse_url($pathExpr, PHP_URL_PATH)) {
-      if ($routeItem = \CRM_Core_Menu::get($routeName)) {
+      if ($routeItem = \Civi::router()->get($routeName)) {
         if (!empty($routeItem['page_callback'])) {
           $result = \CRM_Core_Key::get($routeItem['page_callback']);
         }
@@ -894,7 +894,7 @@ abstract class AbstractRunAction extends \Civi\Api4\Generic\AbstractAction {
       }
       $this->entityActions[$entityName] = [
         'all' => civicrm_api4($entityName, 'getActions', ['checkPermissions' => FALSE])->column('name'),
-        'allowed' => civicrm_api4($entityName, 'getActions', ['checkPermissions' => TRUE])->column('name'),
+        'allowed' => CoreUtil::getAllowedEntityActions($entityName),
       ];
     }
     // Map CRM_Core_Action names to API action names :/
@@ -1045,8 +1045,12 @@ abstract class AbstractRunAction extends \Civi\Api4\Generic\AbstractAction {
     ];
     $entity = $link['entity'];
     // Fix user error - if path has args but omits the question mark, change the first `&` to a `?`
+    // Unless the path begins with a token (e.g. `[MyFile]&download=0`) which may already contain query params
     if ($link['path'] && str_contains($link['path'], '&') && !str_contains($link['path'], '?')) {
-      $link['path'] = preg_replace('/&/', '?', $link['path'], 1);
+      $beforeFirstAmp = strstr($link['path'], '&', TRUE);
+      if (!str_contains($beforeFirstAmp, '[')) {
+        $link['path'] = preg_replace('/&/', '?', $link['path'], 1);
+      }
     }
     if ($entity && CoreUtil::entityExists($entity)) {
       $idKey = $this->getIdKeyName($entity);
@@ -1487,7 +1491,7 @@ abstract class AbstractRunAction extends \Civi\Api4\Generic\AbstractAction {
       case 'Date':
       case 'Timestamp':
         if ($format) {
-          $dateFormat = \Civi::settings()->get($format);
+          $dateFormat = str_starts_with($format, 'dateformat') ? \Civi::settings()->get($format) : $format;
         }
         $formatted = \CRM_Utils_Date::customFormat($rawValue, $dateFormat ?? NULL);
     }

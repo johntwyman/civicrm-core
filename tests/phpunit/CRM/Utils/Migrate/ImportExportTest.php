@@ -163,7 +163,9 @@ class CRM_Utils_Migrate_ImportExportTest extends CiviUnitTestCase {
     $exporter = new CRM_Utils_Migrate_Export();
     $exporter->buildCustomGroups([$customGroup['id']]);
     // print $exporter->toXML();
-    $this->assertEquals(file_get_contents($expectedXmlFilePath), $exporter->toXML());
+    $expectedXml = preg_replace('#<column_name>(\w+)_1</column_name>#', '<column_name>${1}_' . $customField['id'] . '</column_name>', file_get_contents($expectedXmlFilePath));
+    $expectedXml = str_replace('<table_name>civicrm_value_example_1</table_name>', '<table_name>civicrm_value_example_' . $customGroup['id'] . '</table_name>', $expectedXml);
+    $this->assertEquals($expectedXml, $exporter->toXML());
 
     $this->callAPISuccess('custom_field', 'delete', ['id' => $customField['id']]);
     $this->callAPISuccess('custom_group', 'delete', ['id' => $customGroup['id']]);

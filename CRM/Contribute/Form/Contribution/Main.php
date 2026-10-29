@@ -127,7 +127,7 @@ class CRM_Contribute_Form_Contribution_Main extends CRM_Contribute_Form_Contribu
 
     $this->assign('reset', CRM_Utils_Request::retrieve('reset', 'Boolean'));
     $this->assign('mainDisplay', CRM_Utils_Request::retrieve('_qf_Main_display', 'Boolean',
-      CRM_Core_DAO::$_nullObject));
+      NULL));
 
     if (!empty($this->_pcpInfo['id']) && !empty($this->_pcpInfo['intro_text'])) {
       $this->assign('intro_text', $this->_pcpInfo['intro_text']);
@@ -1031,7 +1031,7 @@ class CRM_Contribute_Form_Contribution_Main extends CRM_Contribute_Form_Contribu
       empty($fields['pcp_is_anonymous']) &&
       ($fields['pcp_roll_nickname'] ?? NULL) == ''
     ) {
-      $errors['pcp_roll_nickname'] = ts('Please enter a name to include in the Honor Roll, or select \'contribute anonymously\'.');
+      $errors['pcp_roll_nickname'] = ts("Please enter a name to include in the Honor Roll, or select 'contribute anonymously'.");
     }
 
     // return if this is express mode
@@ -1250,7 +1250,7 @@ class CRM_Contribute_Form_Contribution_Main extends CRM_Contribute_Form_Contribu
     $this->set('invoiceID', $invoiceID);
     $params['invoiceID'] = $invoiceID;
     $title = !empty($this->_values['frontend_title']) ? $this->_values['frontend_title'] : $this->_values['title'];
-    $params['description'] = ts('Online Contribution') . ': ' . ((!empty($this->_pcpInfo['title']) ? $this->_pcpInfo['title'] : $title));
+    $params['description'] = !empty($this->_pcpInfo['title']) ? $this->_pcpInfo['title'] : $title;
     $params['button'] = $this->controller->getButtonName();
     // required only if is_monetary and valid positive amount
     if ($this->_values['is_monetary'] &&
@@ -1445,7 +1445,7 @@ class CRM_Contribute_Form_Contribution_Main extends CRM_Contribute_Form_Contribu
       ];
       $validProfile = CRM_Core_BAO_UFGroup::checkValidProfile($this->_values['honoree_profile_id'], $requiredProfileFields[$profileContactType]);
       if (!$validProfile) {
-        CRM_Core_Error::statusBounce(ts('This contribution page has been configured for contribution on behalf of honoree and the required fields of the selected honoree profile are disabled or doesn\'t exist.'));
+        CRM_Core_Error::statusBounce(ts("This contribution page has been configured for contribution on behalf of honoree and the required fields of the selected honoree profile are disabled or doesn't exist."));
       }
 
       $softCreditTypes = CRM_Core_OptionGroup::values("soft_credit_type", FALSE);

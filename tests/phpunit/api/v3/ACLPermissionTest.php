@@ -182,6 +182,7 @@ class api_v3_ACLPermissionTest extends CiviUnitTestCase {
     CRM_Core_Config::singleton()->userPermissionClass->permissions = [
       'access CiviCRM',
       'view all contacts',
+      'view event info',
     ];
     $this->callAPISuccess('Address', 'create', [
       'city' => 'Mouseville',
@@ -224,13 +225,13 @@ class api_v3_ACLPermissionTest extends CiviUnitTestCase {
     ]);
     CRM_Core_Config::singleton()->userPermissionClass->permissions = ['access CiviCRM'];
     $testEntities = [
-      'Email' => ['email' => 'null@nothing', 'location_type_id' => 1],
-      'Phone' => ['phone' => '123456', 'location_type_id' => 1],
-      'IM' => ['name' => 'hello', 'location_type_id' => 1],
+      'Email' => ['email' => 'null@nothing', 'location_type_id' => $this->getLocationTypeID('Home')],
+      'Phone' => ['phone' => '123456', 'location_type_id' => $this->getLocationTypeID('Home')],
+      'IM' => ['name' => 'hello', 'location_type_id' => $this->getLocationTypeID('Home')],
       'Website' => ['url' => 'http://test'],
       'Address' => [
         'street_address' => '123 Sesame St.',
-        'location_type_id' => 1,
+        'location_type_id' => $this->getLocationTypeID('Home'),
       ],
     ];
     // v3 GroupContact API is nonstandard
@@ -325,7 +326,7 @@ class api_v3_ACLPermissionTest extends CiviUnitTestCase {
    */
   public function testContactGetPermissionHookNoDeleted(int $version): void {
     $this->_apiversion = $version;
-    $this->callAPISuccess('contact', 'create', ['id' => 2, 'is_deleted' => 1]);
+    $this->callAPISuccess('contact', 'create', ['id' => $this->ids['Contact']['test'], 'is_deleted' => 1]);
     $this->hookClass->setHook('civicrm_aclWhereClause', [
       $this,
       'aclWhereHookAllResults',
@@ -389,12 +390,12 @@ class api_v3_ACLPermissionTest extends CiviUnitTestCase {
     ]);
     $result = $this->callAPISuccess('contact', 'get', [
       'sequential' => 1,
-      'id' => 2,
+      'id' => $this->ids['Contact']['test'],
       'check_permissions' => 1,
     ]);
 
     $this->assertEquals(1, $result['count']);
-    $this->assertEquals(2, $result['id']);
+    $this->assertEquals($this->ids['Contact']['test'], $result['id']);
   }
 
   /**

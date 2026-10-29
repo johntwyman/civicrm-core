@@ -8,6 +8,8 @@ use Civi\Api4\User;
 use Civi\Api4\Role;
 use Civi\Api4\UserRole;
 use Civi\Api4\Contact;
+use Civi\Api4\UFField;
+use Civi\Api4\UFGroup;
 
 /**
  * Test the Standaloneusers User Api4 actions
@@ -656,6 +658,33 @@ class UserTest extends \PHPUnit\Framework\TestCase implements EndToEndInterface,
     }
   }
 
+  /**
+   * Public event registration and contribution pages load their profiles
+   * with CREATE permission, so anonymous visitors need 'profile create'.
+   */
+  public function testAnonymousCanUseProfileForms(): void {
+    $this->assertEmpty(\CRM_Utils_System::getLoggedInUfID());
+    $profileID = UFGroup::create(FALSE)
+      ->setValues([
+        'title' => 'Anonymous profile form',
+        'group_type' => 'Individual,Contact',
+        'is_active' => TRUE,
+      ])
+      ->addChain('field', UFField::create(FALSE)->setValues([
+        'uf_group_id' => '$id',
+        'field_name' => 'email',
+        'field_type' => 'Contact',
+        'label' => 'Email',
+        'is_active' => TRUE,
+      ]))
+      ->execute()->single()['id'];
+
+    $fields = \CRM_Core_BAO_UFGroup::getFields($profileID, FALSE, \CRM_Core_Action::ADD,
+      NULL, NULL, FALSE, NULL, FALSE, NULL, \CRM_Core_Permission::CREATE
+    );
+    $this->assertArrayHasKey('email-Primary', $fields);
+  }
+
   public function testNonAdminCannotChangeRoles() {
     $this->loginUser($this->nonAdminUserID);
 
@@ -672,11 +701,35 @@ class UserTest extends \PHPUnit\Framework\TestCase implements EndToEndInterface,
       $this->assertStringContainsString("Authorization failed", $e->getMessage());
     }
 
+    // ...via UserRole.create and pseudoconstant
+    try {
+      UserRole::create(TRUE)
+        ->addValue('user_id', $this->nonAdminUserID)
+        ->addValue('role_id.name', 'admin')
+        ->execute();
+      $this->fail("UserRole::create should have thrown exception");
+    }
+    catch (\Exception $e) {
+      $this->assertStringContainsString("Authorization failed", $e->getMessage());
+    }
+
     // ...via editing own user.
     try {
       User::update(TRUE)
         ->addWhere('id', '=', $this->nonAdminUserID)
         ->addValue('roles', [$adminRoleID])
+        ->execute();
+      $this->fail("User::update should have thrown exception");
+    }
+    catch (\Exception $e) {
+      $this->assertEquals("Not allowed to change roles", $e->getMessage());
+    }
+
+    // via editing own user and pseudoconstant suffix
+    try {
+      User::update(TRUE)
+        ->addWhere('id', '=', $this->nonAdminUserID)
+        ->addValue('roles:name', ['admin'])
         ->execute();
       $this->fail("User::update should have thrown exception");
     }

@@ -60,10 +60,20 @@ class AfformEntitySortEvent extends AfformBaseEvent {
    * @param string $dependsOnEntity
    */
   public function addDependency(string $dependentEntity, string $dependsOnEntity): void {
-    // ensure the node exists
+    // ensure both nodes exist
     $this->addEntity($dependentEntity);
+    $this->addEntity($dependsOnEntity);
     // add the dependency to the list of entities
-    $this->elements[$dependentEntity][] = $dependsOnEntity;
+    if (!in_array($dependsOnEntity, $this->elements[$dependentEntity], TRUE)) {
+      $this->elements[$dependentEntity][] = $dependsOnEntity;
+    }
+  }
+
+  /**
+   * @return array
+   */
+  public function getEntityValues(): array {
+    return $this->entityValues;
   }
 
   /**
@@ -78,6 +88,9 @@ class AfformEntitySortEvent extends AfformBaseEvent {
     $formEntities = array_keys($this->getFormDataModel()->getEntities());
 
     foreach ($this->entityValues as $entityName => $records) {
+      if (empty($this->getFormDataModel()->getEntity($entityName)['type'])) {
+        continue;
+      }
       foreach ($records as $record) {
         foreach ($record['fields'] ?? [] as $fieldValue) {
           foreach ((array) $fieldValue as $value) {

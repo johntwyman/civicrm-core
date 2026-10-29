@@ -74,7 +74,30 @@ function civicrm_api3_contribution_create($params) {
   }
   _civicrm_api3_contribution_create_legacy_support_45($params);
 
-  return _civicrm_api3_basic_create(_civicrm_api3_get_BAO(__FUNCTION__), $params, 'Contribution');
+  $result = _civicrm_api3_basic_create(_civicrm_api3_get_BAO(__FUNCTION__), $params, 'Contribution');
+
+  // card_type_id & pan_truncation describe the payment instrument rather than the contribution
+  // itself, so they aren't part of the fields the BAO writes - apply them to the latest payment
+  // trxn here instead. This only matters on update - on create getTrxnParams() already carries
+  // these through onto the financial trxn it creates. CRM-20158.
+  if (!empty($params['id']) && (isset($params['card_type_id']) || isset($params['pan_truncation']))) {
+    CRM_Core_BAO_FinancialTrxn::updateCreditCardDetails($result['id'], $params['pan_truncation'] ?? NULL, $params['card_type_id'] ?? NULL);
+  }
+
+  // Support a data-correction update to an already-refunded contribution's refund
+  // trxn_id - ie. the person goes back in & fixes a transaction id that was entered
+  // incorrectly, as opposed to recording a new transaction. CRM-17751.
+  if (isset($params['refund_trxn_id'])) {
+    $refundIDs = CRM_Core_BAO_FinancialTrxn::getRefundTransactionIDs($result['id']);
+    if (!empty($refundIDs['financialTrxnId']) && $refundIDs['trxn_id'] != $params['refund_trxn_id']) {
+      civicrm_api3('FinancialTrxn', 'create', [
+        'id' => $refundIDs['financialTrxnId'],
+        'trxn_id' => $params['refund_trxn_id'],
+      ]);
+    }
+  }
+
+  return $result;
 }
 
 /**

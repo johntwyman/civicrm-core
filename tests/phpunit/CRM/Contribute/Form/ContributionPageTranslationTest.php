@@ -39,7 +39,7 @@ class CRM_Contribute_Form_ContributionPageTranslationTest extends CiviUnitTestCa
 
     $params = [
       'title' => 'Test Contribution Page',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_for_organization' => 0,
       'for_organization' => ' I am contributing on behalf of an organization',
       'goal_amount' => '400',
@@ -47,8 +47,7 @@ class CRM_Contribute_Form_ContributionPageTranslationTest extends CiviUnitTestCa
       'honor_block_is_active' => 1,
       'honor_block_title' => 'In Honor Title EN',
       'honor_block_text' => 'In Honor Text EN',
-      // Honoree Individual
-      'honoree_profile' => 13,
+      'honoree_profile' => $this->getProfileID('honoree_individual'),
       // In Honor Of
       'soft_credit_types' => 1,
       'start_date' => '20091022105900',

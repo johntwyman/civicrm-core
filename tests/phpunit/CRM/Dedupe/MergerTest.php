@@ -311,11 +311,11 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
       return $a;
     };
 
-    $this->entityCustomGroupWithSingleFieldCreate(__FUNCTION__, 'Contacts');
+    $customGroupID = $this->entityCustomGroupWithSingleFieldCreate(__FUNCTION__, 'Contacts')['custom_group_id'];
 
     // These are deliberately unset.
     $unsetRefs = array_fill_keys(['civicrm_group_contact_cache', 'civicrm_acl_cache', 'civicrm_acl_contact_cache'], 1);
-    $this->assertEquals($sortRefs(array_diff_key($this->getStaticCIDRefs(), $unsetRefs)), $sortRefs(CRM_Dedupe_Merger::cidRefs()));
+    $this->assertEquals($sortRefs(array_diff_key($this->getStaticCIDRefs($customGroupID), $unsetRefs)), $sortRefs(CRM_Dedupe_Merger::cidRefs()));
     $this->assertEquals($sortRefs(array_diff_key($this->getCalculatedCIDRefs(), $unsetRefs)), $sortRefs(CRM_Dedupe_Merger::cidRefs()));
   }
 
@@ -329,7 +329,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
     $this->setupMatchData();
 
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
     ])['values'];
     $this->assertEquals([
       0 => [
@@ -364,14 +364,14 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesExcludeDeleted(bool $isReverse): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'check_permissions' => TRUE,
       'criteria' => ['Contact' => ['id' => 'IS NOT NULL']],
     ])['values'];
     $this->assertCount(2, $pairs);
     $this->callAPISuccess('Contact', 'delete', ['id' => ($isReverse ? $pairs[0]['dstID'] : $pairs[0]['srcID'])]);
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'check_permissions' => TRUE,
       'criteria' => ['Contact' => ['id' => ['>' => 1]]],
     ])['values'];
@@ -392,14 +392,14 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
     $this->setupMatchData();
     CRM_Core_DAO::executeQuery('UPDATE civicrm_contact SET modified_date = "2020-04-09" WHERE id = ' . $this->ids['Contact']['mickey_1']);
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'check_permissions' => TRUE,
       'criteria' => ['where' => [['modified_date', 'BETWEEN', ['2020-01-01', '2020-09-01']]]],
     ])['values'];
     $this->assertCount(1, $pairs);
     $this->callAPISuccess('Contact', 'delete', ['id' => ($isReverse ? $pairs[0]['dstID'] : $pairs[0]['srcID'])]);
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'check_permissions' => TRUE,
       'criteria' => ['Contact' => ['id' => ['>' => 1]]],
     ])['values'];
@@ -417,12 +417,12 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
     $this->callAPISuccess('address', 'create', [
       'contact_id' => $contact1,
       'state_province_id' => 1049,
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
     $this->callAPISuccess('address', 'create', [
       'contact_id' => $contact2,
       'state_province_id' => 1049,
-      'location_type_id' => 2,
+      'location_type_id' => $this->getLocationTypeID('Work'),
     ]);
     $ruleGroup = $this->createRuleGroup();
     $this->callAPISuccess('Rule', 'create', [
@@ -443,7 +443,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesCriteriaMatched(): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['id' => ['>' => 1]]],
     ])['values'];
     $this->assertCount(2, $pairs);
@@ -472,7 +472,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
       'email' => 'mickey@mouse.com',
     ], 'mickey_4');
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['first_name' => 'Mickey']],
     ])['values'];
     // Each of the 4 Mickeys matches all the others 3+2+1 = 6 matches
@@ -483,7 +483,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
       'to_remove_id' => $this->ids['Contact']['mickey_4'],
     ]);
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['first_name' => 'Mickey']],
     ])['values'];
     // Now we should have 3 motches as there are 3 Mickeys - 2 + 1 matches
@@ -493,7 +493,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
     // is the only mouse who matches the criteria - but Mickey 2
     // matches both remaining mice.
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['nick_name' => 'MouseMeister']],
     ])['values'];
     $this->assertCount(2, $pairs);
@@ -507,7 +507,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
     // the user is still expecting to see that merged mickey available
     // to merge with Mickey 1.
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['nick_name' => 'MouseMeister']],
     ])['values'];
     $this->assertCount(1, $pairs);
@@ -521,7 +521,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesCriteriaMatchedWithLimit(): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['id' => ['>' => 1]]],
       'options' => ['limit' => 1],
     ])['values'];
@@ -537,7 +537,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesCriteriaMatchedWithSearchLimit(): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['id' => ['>' => 1]]],
       'search_limit' => 1,
     ])['values'];
@@ -552,7 +552,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesNoCriteria(): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
     ])['values'];
     $this->assertCount(2, $pairs);
   }
@@ -565,7 +565,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesNoCriteriaButLimit(): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'options' => ['limit' => 1],
     ])['values'];
     $this->assertCount(1, $pairs);
@@ -577,7 +577,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
   public function testGetMatchesCriteriaNotMatched(): void {
     $this->setupMatchData();
     $pairs = $this->callAPISuccess('Dedupe', 'getduplicates', [
-      'rule_group_id' => 1,
+      'rule_group_id' => $this->getDedupeRuleGroupID('IndividualSupervised'),
       'criteria' => ['contact' => ['id' => ['>' => 100000]]],
     ])['values'];
     $this->assertCount(0, $pairs);
@@ -766,7 +766,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
     ]);
 
     $pairs = CRM_Dedupe_Merger::getDuplicatePairs(
-      1,
+      $this->getDedupeRuleGroupID('IndividualSupervised'),
       $groupID,
       TRUE,
       25,
@@ -1447,8 +1447,10 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
    *
    * There is also a check against an automated list but having both seems to
    * add extra stability to me. They do not change often.
+   *
+   * @param int $customGroupID
    */
-  public function getStaticCIDRefs() {
+  public function getStaticCIDRefs(int $customGroupID) {
     return [
       'civicrm_acl_cache' => [
         0 => 'contact_id',
@@ -1633,7 +1635,7 @@ class CRM_Dedupe_MergerTest extends CiviUnitTestCase {
       'civicrm_user_job' => [
         0 => 'created_id',
       ],
-      'civicrm_value_testgetcidref_1' => [
+      'civicrm_value_testgetcidref_' . $customGroupID => [
         0 => 'entity_id',
       ],
       'civicrm_website' => [
@@ -2139,6 +2141,41 @@ WHERE
   }
 
   /**
+   * The payment-mode delete should find contributions linked by line item.
+   */
+  public function testOperationSqlPaymentModeUsesLineItems(): void {
+    // The SQL under test deletes contributions outright, leaving their financial
+    // records behind, so the financial consistency checks cannot pass.
+    $this->isValidateFinancialsOnPostAssert = FALSE;
+    [$mainID, $otherID] = $this->createMergePair();
+    $membershipTypeID = $this->membershipTypeCreate();
+    $mainMembershipID = $this->contactMembershipCreate([
+      'contact_id' => $mainID,
+      'membership_type_id' => $membershipTypeID,
+    ]);
+    $this->contactMembershipCreate([
+      'contact_id' => $otherID,
+      'membership_type_id' => $membershipTypeID,
+    ]);
+    $contributionID = $this->createMembershipContribution($mainID, $mainMembershipID);
+    CRM_Core_DAO::executeQuery(
+      "UPDATE civicrm_line_item SET entity_table = 'civicrm_membership', entity_id = %1 WHERE contribution_id = %2",
+      [1 => [$mainMembershipID, 'Integer'], 2 => [$contributionID, 'Integer']]
+    );
+    // A site that no longer writes the legacy records is linked by line item alone.
+    CRM_Core_DAO::executeQuery('DELETE FROM civicrm_membership_payment WHERE contribution_id = %1', [1 => [$contributionID, 'Integer']]);
+
+    foreach (CRM_Dedupe_Merger::operationSql($mainID, $otherID, 'civicrm_membership', [], 'payment') as $sql) {
+      CRM_Core_DAO::executeQuery($sql);
+    }
+
+    $this->assertEquals(0, CRM_Core_DAO::singleValueQuery(
+      'SELECT COUNT(*) FROM civicrm_contribution WHERE id = %1',
+      [1 => [$contributionID, 'Integer']]
+    ));
+  }
+
+  /**
    * Returns [mainId, otherId] – two fresh individuals to use for a merge.
    */
   private function createMergePair(): array {
@@ -2217,6 +2254,28 @@ WHERE
       ]
     );
     return $contributionId;
+  }
+
+  /**
+   * A PHP error during the merge must not leave a half merge behind.
+   */
+  public function testMergeRollsBackOnError(): void {
+    $keepID = $this->individualCreate();
+    $removeID = $this->individualCreate([], 1);
+    $this->hookClass->setHook('civicrm_merge', function ($type) use ($keepID) {
+      if ($type === 'sqls') {
+        CRM_Core_DAO::executeQuery("UPDATE civicrm_contact SET nick_name = 'half-merged' WHERE id = %1", [1 => [$keepID, 'Integer']]);
+        throw new TypeError('Ruh-roh');
+      }
+    });
+    try {
+      $this->callAPISuccess('Contact', 'merge', ['to_keep_id' => $keepID, 'to_remove_id' => $removeID, 'mode' => 'aggressive']);
+      $this->fail('The error should reach the caller');
+    }
+    catch (TypeError $e) {
+    }
+    $this->assertDBQuery(0, "SELECT COUNT(*) FROM civicrm_contact WHERE nick_name = 'half-merged'");
+    $this->assertDBQuery(0, 'SELECT is_deleted FROM civicrm_contact WHERE id = %1', [1 => [$removeID, 'Integer']]);
   }
 
 }

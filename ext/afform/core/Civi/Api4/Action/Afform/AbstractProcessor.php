@@ -248,8 +248,15 @@ abstract class AbstractProcessor extends \Civi\Api4\Generic\AbstractAction {
           }
         }
       }
-      $event = new AfformPrefillEvent($this->_afform, $this->_formDataModel, $this, $entity['type'], $entityName, $this->_entityIds);
+      $this->_entityValues[$entityName] ??= [];
+      $event = new AfformPrefillEvent($this->_afform, $this->_formDataModel, $this, $entity['type'], $entityName, $this->_entityIds, $this->_entityValues[$entityName]);
       \Civi::dispatcher()->dispatch('civi.afform.prefill', $event);
+      if ($event->getRecords()) {
+        $this->_entityValues[$entityName] = $event->getRecords();
+      }
+      else {
+        unset($this->_entityValues[$entityName]);
+      }
     }
   }
 
@@ -666,6 +673,38 @@ abstract class AbstractProcessor extends \Civi\Api4\Generic\AbstractAction {
   }
 
   /**
+   * Replace relative date filter values (e.g. "this.day") submitted for Date/Timestamp
+   * fields with the absolute date they represent.
+   *
+   * Afform fields such as a Hidden field with an `afform_default` can carry a relative
+   * date filter value through to submission; the entity's create action expects an
+   * absolute date.
+   *
+   * @param string $entityType
+   * @param array $records
+   * @return array
+   */
+  protected function replaceRelativeDates(string $entityType, array $records): array {
+    foreach ($records as $key => $record) {
+      foreach ($record['fields'] as $field => $value) {
+        if (!is_string($value) || !array_key_exists($value, (array) \CRM_Core_OptionGroup::values('relative_date_filters'))) {
+          continue;
+        }
+        $dataType = $this->getEntityField($entityType, $field)['data_type'] ?? NULL;
+        if (in_array($dataType, ['Date', 'Timestamp'], TRUE)) {
+          // Open-ended filters (e.g. "earlier.day") have no 'from', only a 'to' - fall
+          // back to it rather than overwriting the field with an empty value.
+          [$from, $to] = \CRM_Utils_Date::getFromTo($value);
+          if ($from || $to) {
+            $records[$key]['fields'][$field] = $from ?: $to;
+          }
+        }
+      }
+    }
+    return $records;
+  }
+
+  /**
    * @param array $records
    * @param string $entityName
    */
@@ -712,7 +751,12 @@ abstract class AbstractProcessor extends \Civi\Api4\Generic\AbstractAction {
       // Gather submitted field values from $values['fields'] and sub-entities from $values['joins']
       $submittableFields = $this->getSubmittableFields($entity['fields']);
       $fileFields = $this->getFileFields($entity['type'], $submittableFields);
-      foreach ($submittedValues[$entityName] ?? [] as $values) {
+      $records = $submittedValues[$entityName] ?? [];
+      // "extra" is not a real entity so it needs to be reshaped to pass the `!is_array` so we can validate required fields.
+      if (!$entity['type']) {
+        $records = [$records];
+      }
+      foreach ($records as $values) {
         if (!is_array($values)) {
           // For "extra" we might have $values['fields'] if we added any extra fields.
           // But, if we have eg. recaptcha we will have $values['recaptcha2'] and might
@@ -726,6 +770,14 @@ abstract class AbstractProcessor extends \Civi\Api4\Generic\AbstractAction {
         $values['fields'] = $this->getForcedDefaultValues($entity['fields']) +
           array_intersect_key($values['fields'] ?? [], $submittableFields) +
           $this->getHiddenDefaultValues($entity['fields']);
+        // Pass through per-slot "extra" field values (from a repeating fieldset only).
+        // These do not correspond to entity fields, so they are not schema-filtered;
+        // they travel alongside 'fields' for submit subscribers to read from
+        // $record['extras']. processGenericEntity only touches $record['fields'],
+        // so extras sit harmlessly beside it and need not be stripped.
+        if (empty($entity['af-repeat']) || !isset($values['extras']) || !is_array($values['extras'])) {
+          unset($values['extras']);
+        }
         // Special handling for file fields
         foreach ($fileFields as $fileFieldName) {
           if (isset($values['fields'][$fileFieldName]) && is_array($values['fields'][$fileFieldName])) {
@@ -868,6 +920,7 @@ abstract class AbstractProcessor extends \Civi\Api4\Generic\AbstractAction {
     foreach ($sortedEntityNames as $entityName) {
       $entityType = $this->_formDataModel->getEntity($entityName)['type'];
       $records = $this->replaceReferences($entityName, $entityValues[$entityName]);
+      $records = $this->replaceRelativeDates($entityType, $records);
       $this->fillIdFields($records, $entityName);
       $event = new AfformSubmitEvent($this->_afform, $this->_formDataModel, $this, $records, $entityType, $entityName, $this->_entityIds);
       try {
@@ -974,25 +1027,45 @@ abstract class AbstractProcessor extends \Civi\Api4\Generic\AbstractAction {
     $matches = [];
     preg_match_all('/\[[a-zA-Z0-9_]+\.[0-9]+\.[^]]+]/', $text, $matches);
 
-    foreach ($matches[0] as $match) {
-      // strip [ ] and split on .
-      [$entityName, $index, $field] = explode('.', substr($match, 1, -1), 3);
-      if ($field === 'id') {
-        $value = $this->_entityIds[$entityName][$index]['id'];
-      }
-      elseif (isset($this->_submissionTokenValues[$entityName][$index][$field])) {
-        $value = $this->_submissionTokenValues[$entityName][$index][$field];
-      }
-      else {
-        $value = $this->_entityValues[$entityName][$index]['fields'][$field];
-      }
-      $text = str_replace($match, $value, $text);
+    foreach ($matches[0] as $token) {
+      $text = str_replace($token, $this->getTokenValue($token), $text);
     }
 
     // handle special case of JWT token token
     $text = str_replace('[token]', $this->_response['token'] ?? '', $text);
 
     return $text;
+  }
+
+  private function getTokenValue(string $token): string {
+    $token = \trim($token, '[]');
+    // split Individual1.0.first_name
+    // remember: custom field field names can contain .
+    if (\substr_count($token, '.') < 2) {
+      // invalid token
+      return '';
+    }
+    [$entityName, $index, $field] = explode('.', $token, 3);
+    if ($field === 'id') {
+      return (string) $this->_entityIds[$entityName][$index]['id'];
+    }
+    if (isset($this->_submissionTokenValues[$entityName][$index][$field])) {
+      return (string) $this->_submissionTokenValues[$entityName][$index][$field];
+    }
+    if (isset($this->_entityValues[$entityName][$index]['fields'][$field])) {
+      return (string) $this->_entityValues[$entityName][$index]['fields'][$field];
+    }
+    if (\substr_count($field, '.') >= 2) {
+      // we may have a join token
+      [$joinEntity, $joinIndex, $joinField] = explode('.', $field, 3);
+      if ($joinField === 'id') {
+        return (string) $this->_entityIds[$entityName][$index]['joins'][$joinEntity][$joinIndex]['id'];
+      }
+      if (isset($this->_entityValues[$entityName][$index]['joins'][$joinEntity][$joinIndex][$joinField])) {
+        return (string) $this->_entityValues[$entityName][$index]['joins'][$joinEntity][$joinIndex][$joinField];
+      }
+    }
+    return '';
   }
 
 }

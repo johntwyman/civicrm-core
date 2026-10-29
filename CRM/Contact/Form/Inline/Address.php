@@ -58,7 +58,7 @@ class CRM_Contact_Form_Inline_Address extends CRM_Contact_Form_Inline {
    * hence calling parent constructor
    */
   public function __construct() {
-    $locBlockNo = CRM_Utils_Request::retrieve('locno', 'Positive', CRM_Core_DAO::$_nullObject, TRUE);
+    $locBlockNo = CRM_Utils_Request::retrieve('locno', 'Positive', NULL, TRUE);
     $name = "Address_{$locBlockNo}";
 
     parent::__construct(NULL, CRM_Core_Action::NONE, 'post', $name);
@@ -83,7 +83,11 @@ class CRM_Contact_Form_Inline_Address extends CRM_Contact_Form_Inline {
     if ($this->_addressId) {
       $params = ['id' => $this->_addressId];
       $address = CRM_Core_BAO_Address::getValues($params, FALSE, 'id');
-      $this->_values['address'][$this->_locBlockNo] = array_pop($address);
+      $addressValues = array_pop($address);
+      if (empty($addressValues) || (int) ($addressValues['contact_id'] ?? 0) !== $this->getContactID()) {
+        CRM_Utils_System::permissionDenied();
+      }
+      $this->_values['address'][$this->_locBlockNo] = $addressValues;
       $this->_action = CRM_Core_Action::UPDATE;
     }
     else {
@@ -169,6 +173,7 @@ class CRM_Contact_Form_Inline_Address extends CRM_Contact_Form_Inline {
     }
 
     // save address changes
+    $params['check_permissions'] = TRUE;
     $address = CRM_Core_BAO_Address::legacyCreate($params, TRUE);
 
     $this->log();

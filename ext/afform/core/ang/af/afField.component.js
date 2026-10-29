@@ -37,15 +37,36 @@
         // "extra" fields initially have no fieldName
         if (!this.fieldName) {
           isExtra = true;
-          $scope.dataProvider = this.afForm;
           this.fieldName = this.defn.name;
+          // Inside a repeating fieldset, bind to the repeat item's own per-slot
+          // extras store so each slot's extra fields are independent. Join
+          // repeats (getExtrasData() === null) and non-repeated extras fall
+          // back to the single form-level extras object.
+          const perSlotExtras = this.afRepeatItem && this.afRepeatItem.getExtrasData ? this.afRepeatItem.getExtrasData() : null;
+          if (perSlotExtras !== null) {
+            // Per-slot extras provider. An extra field inside a repeating
+            // fieldset stores into this slot's own `extras` bag (a sibling of
+            // `fields`/`joins` in the slot record) rather than the single
+            // form-level extras object, so each slot's extra fields are
+            // independent. We derive the provider from the real afRepeatItem so
+            // it keeps the same shape the rest of afField expects from a repeat
+            // provider (repeatIndex, afRepeat, outerRepeatItem, and
+            // `'repeatIndex' in dataProvider` all resolve through the
+            // prototype); only getFieldData is overridden, to target this
+            // slot's extras instead of its entity fields.
+            $scope.dataProvider = Object.create(this.afRepeatItem, {
+              getFieldData: {value: () => this.afRepeatItem.getExtrasData()}
+            });
+          } else {
+            $scope.dataProvider = this.afForm;
+          }
         } else {
           const closestController = $($element).closest('[af-fieldset],[af-join],[af-repeat-item]');
           $scope.dataProvider = closestController.is('[af-repeat-item]') ? this.afRepeatItem : this.afJoin || this.afFieldset;
         }
-        $scope.fieldId = _.kebabCase(this.fieldName) + '-' + afFieldId++;
+        $scope.fieldId = CRM.utils.dashCase(this.fieldName) + '-' + afFieldId++;
 
-        $element.addClass('af-field-type-' + _.kebabCase(this.defn.input_type));
+        $element.addClass('af-field-type-' + CRM.utils.dashCase(this.defn.input_type));
 
         if (this.defn.input_attrs && this.defn.input_attrs.multiple) {
           $element.addClass('af-field-type-multiple');
@@ -163,11 +184,20 @@
               };
               crmApi4('Afform', 'getOptions', params)
                 .then((data) => {
-                  $('input[crm-ui-select]', $element).removeClass('loading').prop('disabled', !data.length);
+                  $('input[crm-ui-select]', $element)
+                    .removeClass('loading')
+                    .attr('placeholder', data.length ? ts('Select') : ts('None Found'))
+                    .prop('disabled', !data.length);
                   fieldOptions = data;
                 });
             } else {
               fieldOptions = null;
+              // When control field is deselected, disable this field and set appropriate placeholder
+              const ctrlFieldCtrl = $element.closest('[af-repeat-item], [af-join], [af-fieldset], form')
+                .find(`af-field[name="${controlField}"]`).controller('afField');
+              $('input[crm-ui-select]', $element)
+                .attr('placeholder', ts('Choose %1 first', {1: ctrlFieldCtrl?.defn?.label}))
+                .prop('disabled', true);
             }
           }, true);
         }
@@ -230,8 +260,13 @@
           }
         }
 
+        // Value precedence, lowest first: afform_default, stored value (first load only),
+        // SearchParamSet, route params. On first load the routeParams watch applies the last two.
         function initializeValue(firstLoad) {
-          // Set default value if specified. Note that setValueFromUrl() will override this.
+          // Keep a value the field finds on load, e.g. prefilled before its af-if opened, or copied by af-repeat
+          if (firstLoad && $scope.dataProvider.getFieldData()[ctrl.fieldName] !== undefined) {
+            return;
+          }
           if (firstLoad && ctrl.afFieldset?.getStoredValue(ctrl.fieldName) !== undefined) {
             setValue(ctrl.afFieldset.getStoredValue(ctrl.fieldName));
           }
@@ -253,6 +288,11 @@
             ) {
               $scope.dataProvider.getFieldData()[ctrl.fieldName] = {};
             }
+          }
+
+          // On reset, a loaded SearchParamSet replaces the defaults, as its columns do in crmSearchDisplayTable
+          if (!firstLoad && ctrl.afFieldset?.selectedSearchParamSet?.filters) {
+            setValueFromRouteParams($scope.$parent.routeParams);
           }
         }
 
@@ -296,6 +336,20 @@
         );
       };
 
+      // A range such as "5-10", "-5-10" or "5-": a leading minus is a sign, an empty or invalid bound is left out
+      function parseNumberRange(text) {
+        const separator = text.indexOf('-', 1);
+        const bounds = separator < 0 ? [text, ''] : [text.slice(0, separator), text.slice(separator + 1)];
+        const range = {};
+        ['>=', '<='].forEach((op, index) => {
+          const bound = Number(bounds[index]);
+          if (bounds[index] !== '' && !isNaN(bound)) {
+            range[op] = bound;
+          }
+        });
+        return range;
+      }
+
       // Set default value; ensure data type matches input type
       function setValue(value) {
         // For values passed from the url, split
@@ -312,23 +366,25 @@
           value = value[ctrl.search_operator] ? value[ctrl.search_operator] : null;
         }
         // Support "Select Current User" default
-        if (ctrl.defn.input_type === 'EntityRef' && ['Contact', 'Individual'].includes(ctrl.fkEntity) && value === 'user_contact_id') {
-          value = CRM.config.cid;
+        if (ctrl.defn.input_type === 'EntityRef' && ['Contact', 'Individual'].includes(ctrl.fkEntity)) {
+          if (value === 'user_contact_id') {
+            value = CRM.config.cid;
+          } else if (Array.isArray(value)) {
+            value = value.map((contactId) => contactId === 'user_contact_id' ? CRM.config.cid : contactId);
+          }
         }
+        const isNumberRange = ctrl.defn.input_type === 'Number' && ctrl.defn.search_range;
         // correct the value type
-        if (ctrl.defn.input_type !== 'DisplayOnly') {
+        if (ctrl.defn.input_type !== 'DisplayOnly' && !isNumberRange) {
           value = correctValueType(value, ctrl.defn.data_type);
         }
 
         if (ctrl.defn.input_type === 'Date' && typeof value === 'string' && value.startsWith('now')) {
           value = getRelativeDate(value, ctrl.defn.input_attrs.time);
         }
-        if (ctrl.defn.input_type === 'Number' && ctrl.defn.search_range) {
+        if (isNumberRange) {
           if (!isPlainObject(value)) {
-            value = {
-              '>=': +(('' + value).split('-')[0] || 0),
-              '<=': +(('' + value).split('-')[1] || 0),
-            };
+            value = parseNumberRange('' + value);
           }
         } else if (ctrl.defn.input_type === 'Number') {
           value = Number(value);
@@ -477,23 +533,26 @@
         if (Array.isArray(current)) {
           // Remove any invalid options from value array
           const valid = current.filter((v) => options.includes(v));
-          // If any options were removed, update the model and input
+          // If any options were removed, update the model
           if (valid.length < current.length) {
             $scope.dataProvider.getFieldData()[this.fieldName] = valid;
-            $('input[crm-ui-select]', $element).val(valid).change();
           }
         } else {
           // Unset single value if invalid
           if (!options.includes(current)) {
-            $('input[crm-ui-select]', $element).val('').change();
             delete $scope.dataProvider.getFieldData()[this.fieldName];
           }
         }
+        // Re-render Select2 with the current valid selection
+        $element.find('input[crm-ui-select]').controller('ngModel')?.$render();
       };
 
       $scope.select2Options = function() {
         return {
-          results: $scope.getOptions().map((opt) => ({id: opt.id, text: opt.label}))
+          // color/icon/description are what crmSelect2's default formatCrmSelect2 renderer
+          // looks for on each result - carrying them through here is what lets e.g. a tags
+          // filter show the same colored swatches as everywhere else tags are picked.
+          results: $scope.getOptions().map((opt) => ({id: opt.id, text: opt.label, color: opt.color, icon: opt.icon, description: opt.description}))
         };
       };
 

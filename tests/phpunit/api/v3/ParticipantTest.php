@@ -59,7 +59,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
     $this->_params = [
       'contact_id' => $this->_contactID,
       'event_id' => $this->getEventID(),
-      'status_id' => 1,
+      'status_id' => $this->getParticipantStatusID('Registered'),
       'role_id' => 1,
       // to ensure it matches later on
       'register_date' => '2007-07-21 00:00:00',
@@ -415,7 +415,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
     $participant = $this->callAPISuccess('participant', 'create', $this->_params);
     $update = [
       'id' => $participant['id'],
-      'status_id' => 2,
+      'status_id' => $this->getParticipantStatusID('Attended'),
     ];
     $this->callAPISuccess('participant', 'create', $update);
     $this->getAndCheck(array_merge($this->_params, $update), $participant['id'], 'participant');
@@ -429,7 +429,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
     $participant = $this->callAPISuccess('participant', 'create', $myParams);
     $update = [
       'id' => $participant['id'],
-      'status_id' => 2,
+      'status_id' => $this->getParticipantStatusID('Attended'),
     ];
     $update = $this->callAPISuccess('participant', 'create', $update);
 
@@ -451,8 +451,8 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
       'name' => 'my_price_set',
       'title' => 'My Price Set',
       'is_active' => 1,
-      'extends' => 1,
-      'financial_type_id' => 4,
+      'extends' => 'CiviEvent',
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
     ]);
 
     // Add the price set to the event with another API call.
@@ -480,7 +480,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
       'label' => 'price_field_value_1',
       'amount' => 20,
       'is_active' => 1,
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
     ]);
 
     $pfv2 = $this->callAPISuccess('PriceFieldValue', 'create', [
@@ -489,7 +489,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
       'label' => 'price_field_value_2',
       'amount' => 5,
       'is_active' => 1,
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
     ]);
 
     // pay 2 times price field value 1, and 2 times price field value 2.
@@ -566,7 +566,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
       'id' => $participantId,
       'contact_id' => $this->_individualId,
       'event_id' => $this->getEventID(),
-      'status_id' => 3,
+      'status_id' => $this->getParticipantStatusID('No-show'),
       'role_id' => [3],
       'register_date' => '2006-01-21 00:00:00',
       'source' => 'US Open',
@@ -594,7 +594,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
     $this->assertAPISuccess($participant);
     $update = [
       'id' => $participant['id'],
-      'status_id' => 2,
+      'status_id' => $this->getParticipantStatusID('Attended'),
     ];
     $this->callAPISuccess('participant', 'create', $update);
     $this->assertEquals($participant['values'][$participant['id']]['fee_level'],
@@ -609,7 +609,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
   public function testUpdateWithWrongParticipantID(): void {
     $params = [
       'id' => 1234,
-      'status_id' => 3,
+      'status_id' => $this->getParticipantStatusID('No-show'),
       'role_id' => 3,
       'register_date' => '2006-01-21',
       'source' => 'US Open',
@@ -629,7 +629,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
     $params = [
       'id' => $participantID,
       'contact_id' => 12345,
-      'status_id' => 3,
+      'status_id' => $this->getParticipantStatusID('No-show'),
       'role_id' => 3,
       'register_date' => '2006-01-21',
       'source' => 'US Open',
@@ -659,12 +659,12 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
       'display_name' => 'Guru',
       'api.participant' => [
         'event_id' => $this->getEventID(),
-        'status_id' => 1,
+        'status_id' => $this->getParticipantStatusID('Registered'),
         'role_id' => 1,
         'format.only_id' => 1,
       ],
       'api.contribution.create' => [
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'total_amount' => 100,
         'format.only_id' => 1,
       ],
@@ -683,8 +683,6 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
    * Test participant invoke post hook after status update.
    */
   public function testPostHookForAdditionalParticipant(): void {
-    // @todo - figure out why validation tests don't pass
-    $this->isValidateFinancialsOnPostAssert = FALSE;
     $participantID = $this->participantCreate([
       'contact_id' => $this->_contactID,
       'status_id.name' => 'Pending from pay later',
@@ -700,7 +698,7 @@ class api_v3_ParticipantTest extends CiviUnitTestCase {
     $this->hookClass->setHook('civicrm_post', [$this, 'onPost']);
     $params = [
       'id' => $participantID,
-      'status_id' => 1,
+      'status_id' => $this->getParticipantStatusID('Registered'),
     ];
     $this->callAPISuccess('Participant', 'create', $params);
 

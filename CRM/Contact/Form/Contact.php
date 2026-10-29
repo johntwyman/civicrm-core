@@ -27,6 +27,7 @@ class CRM_Contact_Form_Contact extends CRM_Core_Form {
   use CRM_Contact_Form_Edit_PhoneBlockTrait;
   use CRM_Contact_Form_Edit_IMBlockTrait;
   use CRM_Contact_Form_Edit_EmailBlockTrait;
+  use CRM_Contact_Form_Edit_WebsiteBlockTrait;
 
   /**
    * Is this the contact summary edit screen.
@@ -261,7 +262,7 @@ class CRM_Contact_Form_Contact extends CRM_Core_Form {
           $this->_values['openid'] = $this->getExistingOpenIDsReIndexed();
           $this->_values['phone'] = $this->getExistingPhonesReIndexed();
           $this->_values['address'] = CRM_Core_BAO_Address::getValues(['contact_id' => $this->_contactId], TRUE);
-          CRM_Core_BAO_Website::getValues(['contact_id' => $this->_contactId], $this->_values);
+          $this->_values['website'] = $this->getExistingWebsitesReIndexed();
           $this->set('values', $this->_values);
         }
       }
@@ -308,6 +309,8 @@ class CRM_Contact_Form_Contact extends CRM_Core_Form {
     $this->assign('editOptions', $this->_editOptions);
     $this->assign('contactType', $this->_contactType);
     $this->assign('contactSubType', $this->_contactSubType);
+
+    CRM_Core_Smarty::singleton()->addContentWrapperClass('crm-contact-type-' . strtolower($this->_contactType));
 
     // get the location blocks.
     $this->_blocks = $this->get('blocks');
@@ -745,6 +748,7 @@ class CRM_Contact_Form_Contact extends CRM_Core_Form {
           'name' => ts('Delete Contact Image'),
           'url' => 'civicrm/contact/image',
           'qs' => 'reset=1&cid=%%id%%&action=delete',
+          'weight' => 0,
         ],
       ];
       $deleteURL = CRM_Core_Action::formLink($deleteURL,
@@ -1204,10 +1208,10 @@ class CRM_Contact_Form_Contact extends CRM_Core_Form {
         $contactLinks = CRM_Contact_BAO_Contact_Utils::formatContactIDSToLinks($ids, TRUE, TRUE, $contactID);
 
         $duplicateContactsLinks = '<div class="matching-contacts-found">';
-        $duplicateContactsLinks .= ts('One matching contact was found. ', [
+        $duplicateContactsLinks .= ts('One matching contact was found.', [
           'count' => count($contactLinks['rows']),
           'plural' => '%count matching contacts were found.<br />',
-        ]);
+        ]) . ' ';
         if ($contactLinks['msg'] == 'view') {
           $duplicateContactsLinks .= ts('You can View the existing contact', [
             'count' => count($contactLinks['rows']),
@@ -1475,7 +1479,7 @@ class CRM_Contact_Form_Contact extends CRM_Core_Form {
       return;
     }
     if ($name === 'Website') {
-      CRM_Contact_Form_Edit_Website::buildQuickForm($this, $instance);
+      $this->addWebsiteBlockFields($instance);
       return;
     }
     if ($name === 'OpenID') {

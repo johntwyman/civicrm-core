@@ -258,9 +258,6 @@ class SettingsBag {
    * @return SettingsBag
    */
   public function set($key, $value) {
-    if ($this->updateVirtual($key, $value)) {
-      return $this;
-    }
     $this->setDb($key, $value);
     return $this;
   }
@@ -284,10 +281,6 @@ class SettingsBag {
   public function importValues(array $newValues): void {
     $currentValues = $this->exportValues();
 
-    foreach ($this->getVirtualKeys() as $key) {
-      unset($newValues[$key], $currentValues[$key]);
-    }
-
     $revertKeys = array_diff(array_keys($currentValues), array_keys($newValues));
     foreach ($revertKeys as $key) {
       $this->revert($key);
@@ -298,39 +291,13 @@ class SettingsBag {
     }
   }
 
-  private function getVirtualKeys(): array {
-    return ['contribution_invoice_settings'];
-  }
-
   /**
-   * Update a virtualized/deprecated setting.
-   *
-   * Temporary handling for phasing out contribution_invoice_settings.
-   *
-   * Until we have transitioned we need to handle setting & retrieving
-   * contribution_invoice_settings.
-   *
-   * Once removed from core we will add deprecation notices & then remove this.
-   *
-   * https://lab.civicrm.org/dev/core/issues/1558
-   *
-   * @param string $key
-   * @param array $value
-   * @return bool
-   *   TRUE if $key is a virtualized setting. FALSE if it is a normal setting.
+   * Deprecated and does nothing
+   * Will be removed sometime after June 2027
+   * @deprecated
    */
-  public function updateVirtual($key, $value) {
-    if ($key === 'contribution_invoice_settings') {
-      \CRM_Core_Error::deprecatedWarning('Invoicing settings should be directly accessed - eg Civi::setting()->set("invoicing")');
-      foreach (SettingsBag::getContributionInvoiceSettingKeys() as $possibleKeyName => $settingName) {
-        $keyValue = $value[$possibleKeyName] ?? '';
-        if ($possibleKeyName === 'invoicing' && is_array($keyValue)) {
-          $keyValue = $keyValue['invoicing'];
-        }
-        $this->set($settingName, $keyValue);
-      }
-      return TRUE;
-    }
+  public function updateVirtual() {
+    \CRM_Core_Error::deprecatedWarning('Invoicing settings should be directly accessed - eg Civi::setting()->set("invoicing")');
     return FALSE;
   }
 
@@ -340,20 +307,7 @@ class SettingsBag {
    * @return array
    */
   public function computeVirtual() {
-    $contributionSettings = [];
-    foreach (SettingsBag::getContributionInvoiceSettingKeys() as $keyName => $settingName) {
-      switch ($keyName) {
-        case 'invoicing':
-          $contributionSettings[$keyName] = $this->get($settingName) ? [$keyName => 1] : 0;
-          break;
-
-        default:
-          $contributionSettings[$keyName] = $this->get($settingName);
-          break;
-      }
-    }
     return array_merge(
-        ['contribution_invoice_settings' => $contributionSettings],
         $this->interpolateDsnSettings('civicrm'),
         // TODO: provide equivalent component settings for CIVICRM_UF_DSN
         // $this->interpolateDsnSettings('civicrm_uf')
@@ -445,6 +399,8 @@ class SettingsBag {
     }
     $dao->find(TRUE);
     $oldValue = \CRM_Utils_String::unserialize($dao->value);
+    // A missing or NULL value means the default is in effect.
+    $oldEffective = $dao->value === NULL ? $this->getDefault($name) : $oldValue;
 
     // Call 'on_change' listeners. It would be nice to only fire when there's
     // a genuine change in the data. However, PHP developers have mixed
@@ -504,13 +460,14 @@ class SettingsBag {
     }
 
     // Call 'post_change' listeners after the value has been saved.
-    // Unlike 'on_change', this will only fire if the oldValue and newValue are not equivalent (using == comparison)
-    if ($value != $oldValue && !empty($metadata['post_change'])) {
+    // Unlike 'on_change', this only fires if the stored or the effective value changes (using == comparison).
+    $newEffective = $value ?? $this->getDefault($name);
+    if (($value != $oldValue || $newEffective != $oldEffective) && !empty($metadata['post_change'])) {
       foreach ($metadata['post_change'] as $callback) {
         call_user_func(
           \Civi\Core\Resolver::singleton()->get($callback),
-          $oldValue,
-          $value,
+          $oldEffective,
+          $newEffective,
           $metadata,
           $this->domainId
         );
@@ -519,10 +476,12 @@ class SettingsBag {
   }
 
   /**
+   * @deprecated Will be removed sometime after June 2027
    * @return array
    */
   public static function getContributionInvoiceSettingKeys(): array {
-    $convertedKeys = [
+    \CRM_Core_Error::deprecatedWarning('Invoicing settings should be directly accessed - eg Civi::setting()->set("invoicing")');
+    return [
       'credit_notes_prefix' => 'credit_notes_prefix',
       'invoice_prefix' => 'invoice_prefix',
       'due_date' => 'invoice_due_date',
@@ -533,7 +492,6 @@ class SettingsBag {
       'tax_display_settings' => 'tax_display_settings',
       'invoicing' => 'invoicing',
     ];
-    return $convertedKeys;
   }
 
   /**
@@ -615,10 +573,11 @@ class SettingsBag {
 
     foreach (['host', 'name', 'user', 'password', 'port'] as $componentKey) {
       $value = $this->get($prefix . '_db_' . $componentKey);
-      if (!$value) {
+      if ($value === NULL || $value === '') {
         // if missing a required key to compose the dsn, give up trying to interpolate
         // (we have defaults for all keys but password, so this is likely to be unset password
         // (but could be one of the other components has been explicitly nulled))
+        // Compared strictly: '0' is a usable password, not a missing one.
         return [];
       }
       $componentValues[$componentKey] = urlencode($value);

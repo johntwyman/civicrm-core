@@ -149,7 +149,7 @@ class CRM_Contribute_Form_ContributionPage_Amount extends CRM_Contribute_Form_Co
       'label' => ts('Price Set'),
       'onchange' => "showHideAmountBlock( this.value, 'price_set_id' );",
       'class' => 'crm-form-select-priceset',
-    ]);
+    ])->setOptionTextEscaped();
     Civi::resources()->addScriptFile('civicrm', 'js/crm.openRelatedConfig.js');
 
     //CiviPledge fields.
@@ -362,10 +362,10 @@ class CRM_Contribute_Form_ContributionPage_Amount extends CRM_Contribute_Form_Co
 
     if (isset($fields['is_pay_later'])) {
       if (empty($fields['pay_later_text'])) {
-        $errors['pay_later_text'] = ts('Please enter the text for the \'pay later\' checkbox displayed on the contribution form.');
+        $errors['pay_later_text'] = ts("Please enter the text for the 'pay later' checkbox displayed on the contribution form.");
       }
       if (empty($fields['pay_later_receipt'])) {
-        $errors['pay_later_receipt'] = ts('Please enter the instructions to be sent to the contributor when they choose to \'pay later\'.');
+        $errors['pay_later_receipt'] = ts("Please enter the instructions to be sent to the contributor when they choose to 'pay later'.");
       }
     }
     else {
@@ -415,14 +415,14 @@ class CRM_Contribute_Form_ContributionPage_Amount extends CRM_Contribute_Form_Co
             }
           }
           if (!$isSetRow) {
-            $errors['amount_block_is_active'] = ts('If you want to enable the \'Contribution Amounts section\', you need to either \'Allow Other Amounts\' and/or enter at least one row in the \'Fixed Contribution Amounts\' table.');
+            $errors['amount_block_is_active'] = ts("If you want to enable the 'Contribution Amounts section', you need to either 'Allow Other Amounts' and/or enter at least one row in the 'Fixed Contribution Amounts' table.");
           }
         }
       }
     }
 
     if (!empty($fields['payment_processor']) && $financialType = CRM_Contribute_BAO_Contribution::validateFinancialType($self->_defaultValues['financial_type_id'])) {
-      $errors['payment_processor'] = ts("Financial Account of account relationship of 'Expense Account is' is not configured for Financial Type : ") . $financialType;
+      $errors['payment_processor'] = ts("Financial Account of account relationship of 'Expense Account is' is not configured for Financial Type: %1", [1 => $financialType]);
     }
 
     return $errors;

@@ -20,6 +20,7 @@ use Civi\API\EntityLookupTrait;
 use Civi\Api4\Activity;
 use Civi\Api4\Contribution;
 use Civi\Api4\LineItem;
+use Civi\Api4\Order;
 use Civi\Api4\Participant;
 use Civi\Api4\Payment;
 use Civi\Payment\Exception\PaymentProcessorException;
@@ -675,7 +676,7 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
     $errorMsg = [];
 
     if ($self->_mode && !$self->getEventValue('is_monetary')) {
-      $errorMsg['event_id'] = ts('Selected Event is not Paid Event ');
+      $errorMsg['event_id'] = ts('Selected Event is not Paid Event');
     }
 
     if (!empty($values['payment_processor_id'])) {
@@ -726,7 +727,7 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
       $this->getOrder()->setPriceSelectionFromUnfilteredInput($this->getSubmittedValues());
     }
     if ($this->getContactID()) {
-      $this->processBillingAddress($this->getContactID(), $this->getContactValue('email_primary.email'));
+      $this->processBillingAddress($this->getContactID(), (string) $this->getContactValue('email_primary.email'));
     }
     $priorStatusID = $this->getParticipantValue('status_id');
 
@@ -958,7 +959,7 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
         $form->add('select', 'payment_instrument_id',
           ts('Payment Method'),
           ['' => ts('- select -')] + CRM_Contribute_BAO_Contribution::buildOptions('payment_instrument_id', 'create'),
-          FALSE, ['onChange' => "return showHideByValue('payment_instrument_id','4','checkNumber','table-row','select',false);"]
+          FALSE
         );
         // don't show transaction id in batch update mode
         $path = CRM_Utils_System::currentPath();
@@ -1187,13 +1188,25 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
     if ($this->isDefined('ExistingContribution')) {
       return $this->lookup('ExistingContribution', 'id');
     }
-    // CRM-12615 - Get payment information from the primary registration if relevant.
-    $participantID = $this->getParticipantValue('registered_by_id') ?: $this->getParticipantID();
+    // dev/core#6813 - Look for the participant's own line items first; fall
+    // back to the registered_by_id record if this fails (CRM-12615).
     $lineItem = LineItem::get(FALSE)
       ->addWhere('entity_table', '=', 'civicrm_participant')
-      ->addWhere('entity_id', '=', $participantID)
+      ->addWhere('entity_id', '=', $this->getParticipantID())
       ->addWhere('contribution_id', 'IS NOT NULL')
       ->execute()->first();
+    if (empty($lineItem)) {
+      // CRM-12615 - Fall back to the primary registration's line item. Retained
+      // as a defensive/legacy-data safety net, not a confirmed-needed path.
+      $primaryParticipantID = $this->getParticipantValue('registered_by_id');
+      if ($primaryParticipantID) {
+        $lineItem = LineItem::get(FALSE)
+          ->addWhere('entity_table', '=', 'civicrm_participant')
+          ->addWhere('entity_id', '=', $primaryParticipantID)
+          ->addWhere('contribution_id', 'IS NOT NULL')
+          ->execute()->first();
+      }
+    }
     if (empty($lineItem)) {
       return NULL;
     }
@@ -1634,12 +1647,10 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
    */
   public function getContributionValues(): array {
     return [
-      'skipLineItem' => 1,
-      'skipCleanMoney' => TRUE,
       'total_amount' => $this->getContributionTotalAmount(),
       'revenue_recognition_date' => $this->getRevenueRecognitionDate(),
       'source' => $this->getSourceText(),
-      'non_deductible_amount' => 'null',
+      'non_deductible_amount' => $this->getOrder()->getNonDeductibleAmount(),
       'financial_type_id' => $this->getSubmittedValue('financial_type_id') ?: $this->getEventValue('financial_type_id'),
       'payment_instrument_id' => $this->getPaymentInstrumentID(),
       'is_test' => $this->isTest(),
@@ -1668,19 +1679,18 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
   private function saveOrder(array $contributionValues): array {
     $transaction = new CRM_Core_Transaction();
     $participantParams = [
-      'id' => $this->getParticipantID(),
-      'contact_id' => $contributionValues['contact_id'],
-      'event_id' => $this->getEventID(),
-      'status_id' => $this->getSubmittedValue('status_id'),
-      'role_id' => $this->getSubmittedValue('role_id'),
-      'register_date' => $this->getSubmittedValue('register_date'),
-      'source' => $this->getSourceText(),
-      'is_pay_later' => FALSE,
-      'fee_currency' => $this->getCurrency(),
-      'campaign_id' => $this->getSubmittedValue('campaign_id'),
-      'note' => $this->getSubmittedValue('note'),
-      'is_test' => $this->isTest(),
-    ] + $this->getSubmittedCustomFields(4, 'Participant');
+      'entity_id.contact_id' => $contributionValues['contact_id'],
+      'entity_id.event_id' => $this->getEventID(),
+      'entity_id.status_id' => $this->getSubmittedValue('status_id'),
+      'entity_id.role_id' => $this->getSubmittedValue('role_id'),
+      'entity_id.register_date' => $this->getSubmittedValue('register_date'),
+      'entity_id.source' => $this->getSourceText(),
+      'entity_id.is_pay_later' => FALSE,
+      'entity_id.fee_currency' => $this->getCurrency(),
+      'entity_id.campaign_id' => $this->getSubmittedValue('campaign_id'),
+      'entity_id.note' => $this->getSubmittedValue('note'),
+      'entity_id.is_test' => $this->isTest(),
+    ] + CRM_Utils_Array::prefixKeys($this->getSubmittedCustomFields(4, 'Participant'), 'entity_id.');
     if (!$this->getParticipantID() || !$this->getContributionID()) {
       // For new registrations, or existing ones with no contribution,
       // fill in fee detail. For existing
@@ -1688,27 +1698,38 @@ class CRM_Event_Form_Participant extends CRM_Contribute_Form_AbstractEditPayment
       // change the fees via a different form.
       $order = $this->getOrder();
       if ($order) {
-        $participantParams['fee_level'] = $order->getAmountLevel();
-        $participantParams['fee_amount'] = $order->getTotalAmount();
+        $participantParams['entity_id.fee_level'] = $order->getAmountLevel();
+        $participantParams['entity_id.fee_amount'] = $order->getTotalAmount();
       }
     }
     if ($this->getSubmittedValue('discount_id')) {
-      $participantParams['discount_id'] = $this->getSubmittedValue('discount_id');
+      $participantParams['entity_id.discount_id'] = $this->getSubmittedValue('discount_id');
     }
-    $participantID = (int) Participant::save(FALSE)->addRecord($participantParams)->execute()->single()['id'];
+
+    // Lines share an 'identifier' so Order::create() saves them as one
+    // Participant, via entity_id/entity_id.* on the first line - see
+    // CRM_Financial_BAO_Order::saveLineItemEntity().
+    $lineItems = [];
+    foreach ($this->getLineItems() as $lineItem) {
+      $lineItem['entity_table'] = 'civicrm_participant';
+      $lineItem['entity_id'] = $this->getParticipantID();
+      $lineItem['identifier'] = 'participant';
+      $lineItems[] = $lineItem;
+    }
+    $lineItems[0] += $participantParams;
+
+    $contribution = Order::create(FALSE)
+      ->setContributionValues($contributionValues)
+      ->setLineItems($lineItems)
+      ->execute()->single();
+    $participantID = (int) LineItem::get(FALSE)
+      ->addWhere('contribution_id', '=', $contribution['id'])
+      ->addWhere('entity_table', '=', 'civicrm_participant')
+      ->execute()->first()['entity_id'];
     $this->_id = $participantID;
-    // create contribution record
-    $contributionValues['skipLineItem'] = TRUE;
-    $contribution = CRM_Contribute_BAO_Contribution::create($contributionValues);
-    CRM_Price_BAO_LineItem::processPriceSet($participantID, [$this->getPriceSetID() => $this->getLineItems()], $contribution, 'civicrm_participant');
-    // CRM-11124
-    if ($this->getSubmittedValue('discount_id')) {
-      $firstLine = array_values($this->getLineItems())[0];
-      CRM_Event_BAO_Participant::createDiscountTrxn($this->getEventID(), $contributionValues, '', $firstLine['price_field_value_id']);
-    }
     $transaction->commit();
 
-    return ['contribution_id' => $contribution->id, 'participant_id' => $participantID];
+    return ['contribution_id' => $contribution['id'], 'participant_id' => $participantID];
   }
 
   /**

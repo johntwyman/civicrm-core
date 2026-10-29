@@ -47,7 +47,13 @@ class CRM_Utils_TokenConsistencyTest extends CiviUnitTestCase {
    * Post test cleanup.
    */
   public function tearDown(): void {
-    $this->quickCleanup(['civicrm_case', 'civicrm_case_type'], TRUE);
+    $this->quickCleanup([
+      'civicrm_case',
+      'civicrm_case_activity',
+      'civicrm_case_contact',
+      'civicrm_case_type',
+    ], TRUE);
+
     $this->quickCleanUpFinancialEntities();
 
     // WORKAROUND: CRM_Event_Tokens copies `civicrm_event` data into metadata cache. That should probably change, but that's a different scope-of-work.
@@ -91,7 +97,7 @@ class CRM_Utils_TokenConsistencyTest extends CiviUnitTestCase {
    * @return string
    */
   protected function getExpectedCaseTokenOutput(): string {
-    return 'case.id :1
+    return 'case.id :' . $this->case['id'] . '
 case.case_type_id:label :Housing Support
 case.subject :Case Subject
 case.start_date :' . CRM_Utils_Date::customFormat($this->case['start_date']) . '
@@ -559,7 +565,7 @@ contribution_recur.cancel_date :August 19th, 2021  9:12 AM
 contribution_recur.cancel_reason :Because
 contribution_recur.end_date :July 26th, 2021  6:07 PM
 contribution_recur.processor_id :abc
-contribution_recur.payment_token_id :1
+contribution_recur.payment_token_id :' . $this->contributionRecur['payment_token_id'] . '
 contribution_recur.trxn_id :123
 contribution_recur.invoice_id :inv123
 contribution_recur.contribution_status_id :2
@@ -569,8 +575,8 @@ contribution_recur.next_sched_contribution_date :September 8th, 2021
 contribution_recur.failure_count :0
 contribution_recur.failure_retry_date :January 3rd, 2020
 contribution_recur.auto_renew:label :Yes
-contribution_recur.payment_processor_id :1
-contribution_recur.financial_type_id :2
+contribution_recur.payment_processor_id :' . $this->contributionRecur['payment_processor_id'] . '
+contribution_recur.financial_type_id :' . $this->getFinancialTypeID('Member Dues') . '
 contribution_recur.payment_instrument_id :4
 contribution_recur.is_email_receipt:label :Yes
 contribution_recur.frequency_unit:label :year
@@ -636,7 +642,7 @@ contribution_recur.payment_instrument_id:name :Check
     $this->callAPISuccess('ActionSchedule', 'create', [
       'title' => 'job',
       'subject' => 'job',
-      'entity_value' => 1,
+      'entity_value' => CRM_Core_PseudoConstant::getKey('CRM_Member_BAO_Membership', 'membership_type_id', 'General'),
       'mapping_id' => 4,
       'start_action_date' => 'membership_join_date',
       'start_action_offset' => 1,
@@ -772,7 +778,7 @@ contribution_recur.payment_instrument_id:name :Check
    * @return string
    */
   protected function getExpectedParticipantTokenOutput(): string {
-    return "participant.status_id :2
+    return "participant.status_id :{$this->getParticipantStatusID('Attended')}
 participant.role_id :1
 participant.register_date :February 19th, 2007
 participant.source :Wimbledon
@@ -783,8 +789,8 @@ participant.transferred_to_contact_id :
 participant.created_id :{$this->ids['Contact']['logged_in']}
 participant.role_id:label :Attendee
 participant.balance :
-participant.custom_2 :99999
-participant.id :2
+participant.{$this->getCustomFieldName('participant_int')} :99999
+participant.id :{$this->ids['participant'][0]}
 participant.fee_currency :USD
 participant.discount_amount :
 participant.status_id:label :Attended
@@ -814,8 +820,8 @@ event.location :15 Walton St<br />
 up the road<br />
 Emerald City, ME 90210-1234<br />
 United States<br />
-event.info_url :' . CRM_Utils_System::url('civicrm/event/info', NULL, TRUE) . '&reset=1&id=1
-event.registration_url :' . CRM_Utils_System::url('civicrm/event/register', NULL, TRUE) . '&reset=1&id=1
+event.info_url :' . CRM_Utils_System::url('civicrm/event/info', NULL, TRUE) . '&reset=1&id=' . $this->ids['Event'][0] . '
+event.registration_url :' . CRM_Utils_System::url('civicrm/event/register', NULL, TRUE) . '&reset=1&id=' . $this->ids['Event'][0] . '
 event.pay_later_receipt :Please transfer funds to our bank account.
 event.Custom_Group.Enter_text_here :my field
 event.confirm_email_text :
@@ -832,7 +838,7 @@ event.fee_label :Event fees
     return '
 New
 General
-1
+' . $this->getMembershipID() . '
 New
 General
 January 21st, 2007

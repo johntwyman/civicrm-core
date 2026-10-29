@@ -24,7 +24,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
 
   use CRMTraits_Financial_TaxTrait;
 
-  protected $_financialTypeId = 1;
+  protected $_financialTypeId;
 
   protected static $phpunitStartedDate;
   protected static $skipStatusCalStillExists;
@@ -34,6 +34,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
    */
   public function setUp(): void {
     parent::setUp();
+    $this->_financialTypeId = $this->getFinancialTypeID('Donation');
     $this->_apiversion = 3;
     $this->individualCreate();
   }
@@ -72,7 +73,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
       'contribution_id' => $contribution['id'],
       'unit_price' => 100,
       'line_total' => 100,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $this->checkPaymentResult($order, $expectedResult, $lineItems);
   }
@@ -173,7 +174,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
       'contribution_id' => $order['id'],
       'unit_price' => 100,
       'line_total' => 100,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $this->checkPaymentResult($order, $expectedResult, $lineItems);
   }
@@ -236,7 +237,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
     $this->checkPaymentResult($order, $expectedResult);
     $membershipPayment = $this->callAPISuccessGetSingle('MembershipPayment', $params + ['version' => 3]);
 
-    $this->callAPISuccessGetSingle('Membership', ['id' => $membershipPayment['id']]);
+    $this->callAPISuccessGetSingle('Membership', ['id' => $membershipPayment['membership_id']]);
     $this->callAPISuccess('Contribution', 'Delete', ['id' => $order['id']]);
     $p['line_items'][] = [
       'line_item' => [array_pop($lineItems)],
@@ -382,7 +383,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
 
     // Check membership details
     $membershipPayment = $this->callAPISuccessGetSingle('MembershipPayment', ['contribution_id' => $order['id'], 'version' => 3]);
-    $membership = $this->callAPISuccessGetSingle('Membership', ['id' => $membershipPayment['id']]);
+    $membership = $this->callAPISuccessGetSingle('Membership', ['id' => $membershipPayment['membership_id']]);
 
     if (isset($expectations['status_id'])) {
       $membership['status_id'] = \CRM_Member_PseudoConstant::membershipstatus()[$membership['status_id']];
@@ -742,14 +743,14 @@ class api_v3_OrderTest extends CiviUnitTestCase {
         0 => [
           'line_item' => [
             '0' => [
-              'price_field_id' => 1,
-              'price_field_value_id' => 1,
+              'price_field_id' => $this->getDefaultContributionPriceFieldID(),
+              'price_field_value_id' => $this->getDefaultContributionPriceFieldValueID(),
               'label' => 'Test 1',
               'field_title' => 'Test 1',
               'qty' => 1,
               'unit_price' => 40,
               'line_total' => 40,
-              'financial_type_id' => 1,
+              'financial_type_id' => $this->getFinancialTypeID('Donation'),
               'entity_table' => 'civicrm_contribution',
             ],
           ],
@@ -775,14 +776,14 @@ class api_v3_OrderTest extends CiviUnitTestCase {
         0 => [
           'line_item' => [
             '0' => [
-              'price_field_id' => 1,
-              'price_field_value_id' => 1,
+              'price_field_id' => $this->getDefaultContributionPriceFieldID(),
+              'price_field_value_id' => $this->getDefaultContributionPriceFieldValueID(),
               'label' => 'Test 1',
               'field_title' => 'Test 1',
               'qty' => 1,
               'unit_price' => 30,
               'line_total' => 30,
-              'financial_type_id' => 1,
+              'financial_type_id' => $this->getFinancialTypeID('Donation'),
               'entity_table' => 'civicrm_contribution',
               'tax_amount' => 15,
             ],
@@ -811,8 +812,8 @@ class api_v3_OrderTest extends CiviUnitTestCase {
         0 => [
           'line_item' => [
             '0' => [
-              'price_field_id' => 1,
-              'price_field_value_id' => 1,
+              'price_field_id' => $this->getDefaultContributionPriceFieldID(),
+              'price_field_value_id' => $this->getDefaultContributionPriceFieldValueID(),
               'label' => 'Test 1',
               'field_title' => 'Test 1',
               'qty' => 1,
@@ -840,7 +841,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
    * chaining.
    */
   public function testCreateWithChainedPayment(): void {
-    $contributionID = $this->callAPISuccess('Order', 'create', ['contact_id' => $this->ids['Contact']['individual_0'], 'total_amount' => 5, 'financial_type_id' => 2, 'contribution_status_id' => 'Pending', 'api.Payment.create' => ['total_amount' => 5]])['id'];
+    $contributionID = $this->callAPISuccess('Order', 'create', ['contact_id' => $this->ids['Contact']['individual_0'], 'total_amount' => 5, 'financial_type_id' => $this->getFinancialTypeID('Member Dues'), 'contribution_status_id' => 'Pending', 'api.Payment.create' => ['total_amount' => 5]])['id'];
     $this->assertEquals('Completed', $this->callAPISuccessGetValue('Contribution', ['id' => $contributionID, 'return' => 'contribution_status']));
   }
 
@@ -868,7 +869,7 @@ class api_v3_OrderTest extends CiviUnitTestCase {
         [
           'line_item' => [
             [
-              'price_field_id' => 1,
+              'price_field_id' => $this->getDefaultContributionPriceFieldID(),
               'unit_price' => 50.00,
               'qty' => 1,
               'line_total' => 50.00,
@@ -881,13 +882,13 @@ class api_v3_OrderTest extends CiviUnitTestCase {
         [
           'line_item' => [
             [
-              'price_field_id' => 1,
+              'price_field_id' => $this->getDefaultContributionPriceFieldID(),
               'unit_price' => 50.00,
               'qty' => 1,
               'line_total' => 50.00,
               'tax_amount' => 0.00,
               'label' => 'Student Membership',
-              'financial_type_id' => 2,
+              'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
               'entity_table' => 'civicrm_membership',
               'membership_type_id' => $membershipTypeID,
             ],

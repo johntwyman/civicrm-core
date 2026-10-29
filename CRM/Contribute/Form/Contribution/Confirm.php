@@ -127,7 +127,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @return mixed|string
    */
   public function getMembershipSource(): mixed {
-    $membershipSource = $this->getSubmittedValue('membership_source') ?: (ts('Online Contribution:') . $this->getContributionPageValue('frontend_title'));
+    $membershipSource = $this->getSubmittedValue('membership_source') ?: ts('Online Contribution: %1', [1 => $this->getContributionPageValue('frontend_title')]);
     return $membershipSource;
   }
 
@@ -185,7 +185,17 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    * @throws \CRM_Core_Exception
    */
   public function getSource(): string {
-    return ts('Online Contribution') . ': ' . (!empty($this->_pcpInfo['title']) ? $this->_pcpInfo['title'] : $this->getContributionPageValue('frontend_title'));
+    return ts('Online Contribution: %1', [1 => $this->getPageTitle()]);
+  }
+
+  /**
+   * Get the title of the personal campaign page or else of the contribution page.
+   *
+   * @return string
+   * @throws \CRM_Core_Exception
+   */
+  private function getPageTitle(): string {
+    return !empty($this->_pcpInfo['title']) ? $this->_pcpInfo['title'] : $this->getContributionPageValue('frontend_title');
   }
 
   /**
@@ -335,7 +345,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
     $paymentParams['contributionPageID'] = $this->getContributionPageID();
     $paymentParams['campaign_id'] = $this->getCampaignID();
     $paymentParams['currency'] = $paymentParams['currencyID'] = $this->getCurrency();
-    $paymentParams['description'] = $this->getSource();
+    $paymentParams['description'] = $this->getPageTitle();
     $paymentParams['contactID'] = $this->getContactID();
     return $paymentParams;
   }
@@ -1943,7 +1953,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
         $message[] = $error;
       }
     }
-    return ts('Payment Processor Error message') . ': ' . implode('<br/>', $message);
+    return ts('Payment Processor Error message: %1', [1 => implode('<br/>', $message)]);
   }
 
   /**
@@ -2505,7 +2515,7 @@ class CRM_Contribute_Form_Contribution_Confirm extends CRM_Contribute_Form_Contr
    */
   protected function bounceOnError($message): void {
     CRM_Core_Session::singleton()
-      ->setStatus(ts('Payment Processor Error message') . ': ' . $message);
+      ->setStatus(ts('Payment Processor Error message: %1', [1 => $message]));
     CRM_Utils_System::redirect(CRM_Utils_System::url('civicrm/contribute/transact',
       '_qf_Main_display=true&qfKey=' . ($this->_params['qfKey'] ?? NULL)
     ));

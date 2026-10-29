@@ -148,7 +148,7 @@ class CRM_Contact_Form_Edit_Address {
 
     if ($sharing) {
       // shared address
-      $form->addElement('checkbox', "address[$blockId][use_shared_address]", NULL, ts('Use another contact\'s address'));
+      $form->addElement('checkbox', "address[$blockId][use_shared_address]", NULL, ts("Use another contact's address"));
 
       // Override the default profile links to add address form
       $profileLinks = CRM_Contact_BAO_Contact::getEntityRefCreateLinks('shared_address');
@@ -178,8 +178,16 @@ class CRM_Contact_Form_Edit_Address {
 
     if (!empty($fields['address']) && is_array($fields['address'])) {
       foreach ($fields['address'] as $instance => $addressValues) {
-        if (!empty($addressValues['use_shared_address']) && empty($addressValues['master_id'])) {
-          $errors["address[$instance][use_shared_address]"] = ts('Please select valid shared contact or a contact with valid address.');
+        if (!empty($addressValues['use_shared_address'])) {
+          if (empty($addressValues['master_id'])) {
+            $errors["address[$instance][use_shared_address]"] = ts('Please select valid shared contact or a contact with valid address.');
+          }
+          else {
+            $masterContactId = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_Address', $addressValues['master_id'], 'contact_id');
+            if (!$masterContactId || !CRM_Contact_BAO_Contact_Permission::allow($masterContactId, CRM_Core_Permission::VIEW)) {
+              $errors["address[$instance][use_shared_address]"] = ts('You do not have permission to share an address from this contact.');
+            }
+          }
         }
       }
     }

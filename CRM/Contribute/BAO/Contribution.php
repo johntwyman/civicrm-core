@@ -82,6 +82,30 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
   public $trxn_result_code;
 
   /**
+   * Get the back-office payment fields (e.g. check_number, card_type_id) to show/save for a
+   * payment instrument, from the payment_instrument option value's 'grouping' column.
+   *
+   * This is for core's own use, leveraging CRM_Core_BAO_OptionValue::getOptionValuesArray()'s
+   * cache. Anything outside core should use the 'payment_instrument_fields' field on the
+   * OptionValue APIv4 entity instead.
+   *
+   * @param int|string $paymentInstrumentID
+   *
+   * @return array
+   *
+   * @internal
+   */
+  public static function getPaymentInstrumentFields($paymentInstrumentID): array {
+    $optionGroupID = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_OptionGroup', 'payment_instrument', 'id', 'name');
+    foreach (CRM_Core_BAO_OptionValue::getOptionValuesArray($optionGroupID) as $optionValue) {
+      if ((string) $optionValue['value'] === (string) $paymentInstrumentID) {
+        return (array) json_decode((string) ($optionValue['grouping'] ?? ''), TRUE);
+      }
+    }
+    return [];
+  }
+
+  /**
    * Takes an associative array and creates a contribution object.
    *
    * the function extract all the params it needs to initialize the create a
@@ -135,8 +159,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
     self::calculateMissingAmountParams($params, $contributionID);
 
     if (!empty($params['payment_instrument_id'])) {
-      $paymentInstruments = CRM_Contribute_PseudoConstant::paymentInstrument('name');
-      if ($params['payment_instrument_id'] != array_search('Check', $paymentInstruments)) {
+      if (!in_array('check_number', self::getPaymentInstrumentFields($params['payment_instrument_id']), TRUE)) {
         $params['check_number'] = 'null';
       }
     }
@@ -250,8 +273,10 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
         // Note that leveraging this parameter for any other code flow is not supported and
         // is likely to break in future and / or cause serious problems in your data.
         // https://github.com/civicrm/civicrm-core/pull/14673
-        $financialProcessor = new CRM_Contribute_BAO_FinancialProcessor($params['prevContribution'] ?? NULL, $contribution, $previousLineItems, $params);
+        $financialProcessor = new CRM_Contribute_BAO_FinancialProcessor($params['prevContribution'] ?? NULL, $contribution, $previousLineItems, reset($params['line_item']), $params);
         $financialProcessor->recordFinancialAccounts($params);
+        unset($params['line_item']);
+        unset($params['trxnParams']);
       }
     }
 
@@ -1098,7 +1123,6 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
 
     while ($resultDAO->fetch()) {
       $paidByLabel = CRM_Core_PseudoConstant::getLabel('CRM_Core_BAO_FinancialTrxn', 'payment_instrument_id', $resultDAO->payment_instrument_id);
-      $paidByName = CRM_Core_PseudoConstant::getName('CRM_Core_BAO_FinancialTrxn', 'payment_instrument_id', $resultDAO->payment_instrument_id);
       if ($resultDAO->card_type_id) {
         $creditCardType = CRM_Core_PseudoConstant::getLabel('CRM_Core_BAO_FinancialTrxn', 'card_type_id', $resultDAO->card_type_id);
         $pantruncation = '';
@@ -1149,7 +1173,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
         'currency' => $resultDAO->currency,
         'action' => $paymentEditLink,
       ];
-      if ($paidByName === 'Check') {
+      if (in_array('check_number', self::getPaymentInstrumentFields($resultDAO->payment_instrument_id), TRUE)) {
         $val['check_number'] = $resultDAO->check_number;
       }
       else {
@@ -2188,21 +2212,7 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
     }
 
     if ($participantID) {
-      $eventParams = ['id' => $eventID];
-      $values['event'] = [];
-
-      CRM_Event_BAO_Event::retrieve($eventParams, $values['event']);
-
-      // @todo set this in is_email_receipt, based on $this->_relatedObjects.
-      if ($values['event']['is_email_confirm']) {
-        $values['is_email_receipt'] = 1;
-      }
-
-      if ($contributionID) {
-        $values['contributionId'] = $contributionID;
-      }
-
-      return CRM_Event_BAO_Event::sendMail($contactID, $values,
+      return CRM_Event_BAO_Event::sendMail(NULL, $values,
         $participantID, $this->is_test, $returnMessageText
       );
     }
@@ -2357,7 +2367,6 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
     $template->assign('is_recur', !empty($this->contribution_recur_id));
 
     if ($this->_component === 'event') {
-      $template->assign('event', $values['event']);
       $template->assign('participant', $values['participant']);
 
       $isTest = $this->is_test;
@@ -2368,12 +2377,7 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
       if (count($additionalIDs)) {
         //set additionalParticipant true
         foreach ($additionalIDs as $participantID) {
-          //to change the status pending to completed
-          $additional = new CRM_Event_DAO_Participant();
-          $additional->id = $participantID;
-          $additional->find(TRUE);
-          $contactID = (int) $additional->contact_id;
-          CRM_Event_BAO_Event::sendMail($contactID, $values, $participantID, $isTest, $returnMessageText);
+          CRM_Event_BAO_Event::sendMail(NULL, $values, $participantID, $isTest, $returnMessageText);
         }
       }
     }
@@ -2395,6 +2399,46 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
   }
 
   /**
+   * Is changing from the old to the new contribution status a permitted transition.
+   *
+   * True whenever either status is a site-defined (non-reserved) status - the
+   * core transition table below only constrains movement between two core
+   * statuses - or the new status is in that table's list of valid transitions
+   * for the old one.
+   *
+   * This is the single source of truth for which core-to-core status changes
+   * are valid - both checkStatusValidation() (which throws) and
+   * CRM_Contribute_Form_Contribution::getAvailableContributionStatuses()
+   * (which filters the status-change dropdown) call this, so the two can't
+   * drift apart again.
+   *
+   * @param int $oldContributionStatusID
+   * @param int $newContributionStatusID
+   *
+   * @return bool
+   */
+  public static function isValidStatusTransition(int $oldContributionStatusID, int $newContributionStatusID): bool {
+    $contributionStatuses = array_column(\Civi::entity('Contribution')->getOptions('contribution_status_id'), NULL, 'id');
+    if (empty($contributionStatuses[$newContributionStatusID]['is_reserved'])
+      || empty($contributionStatuses[$oldContributionStatusID]['is_reserved'])
+    ) {
+      return TRUE;
+    }
+    $checkStatus = [
+      'Cancelled' => ['Completed', 'Refunded'],
+      'Completed' => ['Cancelled', 'Refunded', 'Chargeback', 'Partially paid', 'Pending refund'],
+      'Pending' => ['Cancelled', 'Completed', 'Failed', 'Partially paid'],
+      'In Progress' => ['Cancelled', 'Completed', 'Failed'],
+      'Refunded' => ['Cancelled', 'Completed'],
+      'Partially paid' => ['Completed', 'Refunded'],
+      'Pending refund' => ['Completed', 'Refunded'],
+      'Failed' => ['Pending'],
+    ];
+    $validNewStatues = $checkStatus[$contributionStatuses[$oldContributionStatusID]['name']] ?? [];
+    return in_array($contributionStatuses[$newContributionStatusID]['name'], $validNewStatues, TRUE);
+  }
+
+  /**
    * Check status validation on update of a contribution.
    *
    * @param array $oldContributionValues
@@ -2406,34 +2450,11 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
    * @throws \CRM_Core_Exception
    */
   public static function checkStatusValidation(array $oldContributionValues, array $newContributionValues): void {
-    $contributionStatuses = array_column(\Civi::entity('Contribution')->getOptions('contribution_status_id'), NULL, 'id');
-    $newContributionStatusName = $contributionStatuses[$newContributionValues['contribution_status_id']]['name'];
-    $oldContributionStatusName = $contributionStatuses[$oldContributionValues['contribution_status_id']]['name'];
-    if (empty($contributionStatuses[$newContributionValues['contribution_status_id']]['is_reserved'])) {
-      // Allow transitioning to a custom status from any normal/reserved status
-      return;
-    }
-    if (empty($contributionStatuses[$oldContributionValues['contribution_status_id']]['is_reserved'])) {
-      // Allow transitioning from a custom status to any normal/reserved status
-      return;
-    }
-
-    $checkStatus = [
-      'Cancelled' => ['Completed', 'Refunded'],
-      'Completed' => ['Cancelled', 'Refunded', 'Chargeback', 'Partially paid', 'Pending refund'],
-      'Pending' => ['Cancelled', 'Completed', 'Failed', 'Partially paid'],
-      'In Progress' => ['Cancelled', 'Completed', 'Failed'],
-      'Refunded' => ['Cancelled', 'Completed'],
-      'Partially paid' => ['Completed', 'Refunded'],
-      'Pending refund' => ['Completed', 'Refunded'],
-      'Failed' => ['Pending'],
-    ];
-    $validNewStatues = $checkStatus[$oldContributionStatusName] ?? [];
-
-    if (!in_array($newContributionStatusName, $validNewStatues, TRUE)) {
+    if (!self::isValidStatusTransition((int) $oldContributionValues['contribution_status_id'], (int) $newContributionValues['contribution_status_id'])) {
+      $contributionStatuses = array_column(\Civi::entity('Contribution')->getOptions('contribution_status_id'), NULL, 'id');
       throw new CRM_Core_Exception(ts('Cannot change contribution status from %1 to %2.', [
-        1 => $oldContributionStatusName,
-        2 => $newContributionStatusName,
+        1 => $contributionStatuses[$oldContributionValues['contribution_status_id']]['name'],
+        2 => $contributionStatuses[$newContributionValues['contribution_status_id']]['name'],
       ]));
     }
   }
@@ -2854,7 +2875,7 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
     }
 
     $participantPayments = civicrm_api3('ParticipantPayment', 'get', ['contribution_id' => $contributionID, 'return' => 'participant_id', 'sequential' => 1])['values'];
-    if (!empty($participantPayments) && empty($input['IAmAHorribleNastyBeyondExcusableHackInTheCRMEventFORMTaskClassThatNeedsToBERemoved']) && !$disableActionsOnCompleteOrder) {
+    if (!empty($participantPayments) && !$disableActionsOnCompleteOrder) {
       foreach ($participantPayments as $participantPayment) {
         $participantParams['id'] = $participantPayment['participant_id'];
         $participantParams['status_id'] = 'Registered';
@@ -3060,27 +3081,6 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
       }
     }
     return $values;
-  }
-
-  /**
-   * Get values of CiviContribute Settings
-   * and check if its enabled or not.
-   * Note: The CiviContribute settings are stored as single entry in civicrm_setting
-   * in serialized form. Usually this should be stored as flat settings for each form fields
-   * as per CiviCRM standards. Since this would take more effort to change the current behaviour of CiviContribute
-   * settings we will live with an inconsistency because it's too hard to change for now.
-   * https://github.com/civicrm/civicrm-core/pull/8562#issuecomment-227874245
-   *
-   * @param string $name
-   *
-   * @return string
-   *
-   * @deprecated since 5.68 will be removed around 5.74.
-   */
-  public static function checkContributeSettings($name) {
-    CRM_Core_Error::deprecatedFunctionWarning('Use \Civi::settings()->get() with the actual setting name');
-    $contributeSettings = Civi::settings()->get('contribution_invoice_settings');
-    return $contributeSettings[$name] ?? NULL;
   }
 
   /**
@@ -3380,14 +3380,6 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
    * @throws \CRM_Core_Exception
    */
   protected function loadEventMessageTemplateParams(int $eventID, int $participantID): array {
-
-    $eventParams = [
-      'id' => $eventID,
-    ];
-    $values = ['event' => []];
-
-    CRM_Event_BAO_Event::retrieve($eventParams, $values['event']);
-
     //get participant details
     $participantParams = [
       'id' => $participantID,
@@ -3396,16 +3388,6 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
     $values['participant'] = [];
 
     CRM_Event_BAO_Participant::getValues($participantParams, $values['participant'], $participantIds);
-    $ufJoinParams = [
-      'entity_table' => 'civicrm_event',
-      'entity_id' => $eventID,
-      'module' => 'CiviEvent',
-    ];
-
-    [$custom_pre_id, $custom_post_ids] = CRM_Core_BAO_UFJoin::getUFGroupIds($ufJoinParams);
-
-    $values['custom_pre_id'] = $custom_pre_id;
-    $values['custom_post_id'] = $custom_post_ids;
 
     return $values;
   }

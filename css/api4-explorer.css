@@ -43,7 +43,7 @@
 }
 
 #bootstrap-theme.api4-explorer-page .explorer-help-panel .panel-body {
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* because each help p is in a div, this undoes bootstrap removing margin from last-child */
@@ -81,10 +81,6 @@
 
 #bootstrap-theme.api4-explorer-page fieldset div.api4-input {
   margin-bottom: 10px;
-}
-
-#bootstrap-theme.api4-explorer-page fieldset div.api4-input.ui-sortable-helper {
-  background-color: rgba(255, 255, 255, .9);
 }
 
 #bootstrap-theme.api4-explorer-page fieldset div.api4-input.ui-sortable-helper {

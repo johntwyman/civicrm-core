@@ -20,6 +20,7 @@ class FormDataModel {
     'actions' => ['create' => TRUE, 'update' => TRUE],
     'min' => 1,
     'max' => 1,
+    'af-repeat' => FALSE,
   ];
 
   /**
@@ -184,6 +185,7 @@ class FormDataModel {
         $entity = $node['af-fieldset'] ?? NULL;
         $searchDisplay = $entity ? NULL : $this->findSearchDisplay($node);
         if ($entity && isset($node['af-repeat'])) {
+          $this->entities[$entity]['af-repeat'] = TRUE;
           $this->entities[$entity]['min'] = $node['min'] ?? 0;
           $this->entities[$entity]['max'] = $node['max'] ?? NULL;
         }
@@ -276,7 +278,6 @@ class FormDataModel {
       'select' => $select,
       'loadOptions' => [
         'id',
-        'label',
         ...array_keys(\CRM_Core_SelectValues::optionAttributes()),
       ],
       // If the admin included this field on the form, then it's OK to get metadata about the field regardless of user permissions.

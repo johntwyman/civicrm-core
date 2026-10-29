@@ -34,8 +34,8 @@ class CRM_Price_BAO_PriceFieldValueTest extends CiviUnitTestCase {
       'is_active' => 1,
       'help_pre' => "Where does your goat sleep",
       'help_post' => "thank you for your time",
-      'extends' => 2,
-      'financial_type_id' => 1,
+      'extends' => 'CiviContribute',
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_quick_config' => 1,
       'is_reserved' => 1,
     ];
@@ -58,7 +58,7 @@ class CRM_Price_BAO_PriceFieldValueTest extends CiviUnitTestCase {
       'name' => 'rye_grass',
       'label' => '',
       'amount' => 1,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $priceFieldValue = CRM_Price_BAO_PriceFieldValue::create($params);
     $priceFieldValue->find(TRUE);

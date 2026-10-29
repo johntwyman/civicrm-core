@@ -1,6 +1,8 @@
 <?php
 
 use Civi\Api4\Activity;
+use Civi\Api4\ActivityContact;
+use Civi\Api4\Email;
 use Civi\Api4\OptionValue;
 
 /**
@@ -173,7 +175,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       'activity_date_time' => date('Ymd'),
     ];
 
-    CRM_Activity_BAO_Activity::create($params);
+    $activityID = CRM_Activity_BAO_Activity::create($params)->id;
 
     // set custom hook
     $this->hookClass->setHook('civicrm_aclWhereClause', [$this, 'hook_civicrm_aclWhereClause']);
@@ -192,7 +194,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
     // Note that because there is a target contact but it is not accessible the output is an empty string not n/a
     $this->assertEquals('', $activities['data'][0]['target_contact_name']);
     // verify that doing the underlying query shows we get a target contact_id
-    $this->assertEquals(1, CRM_Activity_BAO_Activity::getActivities(['contact_id' => $contactId])[1]['target_contact_count']);
+    $this->assertEquals(1, CRM_Activity_BAO_Activity::getActivities(['contact_id' => $contactId])[$activityID]['target_contact_count']);
     $this->cleanUpAfterACLs();
   }
 
@@ -595,7 +597,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
    */
   public function testGetActivitiesForAdminDashboardAclLimitedViewContacts(): void {
     CRM_Core_Config::singleton()->userPermissionClass->permissions = ['access CiviCRM'];
-    $this->allowedContacts = [1, 3, 4, 5];
+    $this->allowedContacts = [18, 3, 4, 5];
     $this->hookClass->setHook('civicrm_aclWhereClause', [$this, 'aclWhereMultipleContacts']);
     $this->setUpForActivityDashboardTests();
     $this->assertEquals(7, count(CRM_Activity_BAO_Activity::getActivities($this->_params)));
@@ -671,7 +673,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       'source_contact_id' => $contactId,
       'target_contact_id' => $targetContactIDs,
     ];
-    $this->activityCreate($activityParams);
+    $activityID = $this->activityCreate($activityParams)['id'];
 
     $params = [
       'contact_id' => $contactId,
@@ -679,10 +681,10 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
     ];
     $activities = CRM_Activity_BAO_Activity::getActivities($params);
     //verify target count
-    $this->assertEquals($targetCount, $activities[1]['target_contact_count']);
-    $this->assertEquals([$targetContactIDs[0] => 'Anderson, Anthony II'], $activities[1]['target_contact_name']);
-    $this->assertEquals('Anderson, Anthony II', $activities[1]['source_contact_name']);
-    $this->assertEquals('Anderson, Anthony II', $activities[1]['assignee_contact_name'][4]);
+    $this->assertEquals($targetCount, $activities[$activityID]['target_contact_count']);
+    $this->assertEquals([$targetContactIDs[0] => 'Anderson, Anthony II'], $activities[$activityID]['target_contact_name']);
+    $this->assertEquals('Anderson, Anthony II', $activities[$activityID]['source_contact_name']);
+    $this->assertEquals('Anderson, Anthony II', $activities[$activityID]['assignee_contact_name'][$targetContactIDs[0]]);
   }
 
   /**
@@ -802,7 +804,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       ],
       'with-activity' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => FALSE,
           'caseId' => NULL,
           'context' => 'home',
@@ -838,7 +840,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       ],
       'sort-by-subject' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => FALSE,
           'caseId' => NULL,
           'context' => 'home',
@@ -861,13 +863,13 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
           $this->assertEquals(0, $activityCount);
         }
         elseif ($caseName === 'with-activity') {
-          // contact id 1 is assigned as source, target and assignee for activity id 1, 7 and 8 respectively
+          // contact id 18 is assigned as source, target and assignee for activity id 1, 7 and 8 respectively
           $this->assertEquals(3, count($activities));
           $this->assertEquals(3, $activityCount);
-          $this->assertEquals(1, $activities[1]['source_contact_id']);
+          $this->assertEquals(18, $activities[1]['source_contact_id']);
           // @todo - this is a discrepancy between old & new - review.
-          //$this->assertEquals(TRUE, array_key_exists(1, $activities[7]['target_contact_name']));
-          $this->assertEquals(TRUE, array_key_exists(1, $activities[8]['assignee_contact_name']));
+          //$this->assertEquals(TRUE, array_key_exists(18, $activities[7]['target_contact_name']));
+          $this->assertEquals(TRUE, array_key_exists(18, $activities[8]['assignee_contact_name']));
         }
         elseif ($caseName === 'with-activity_type') {
           // contact id 3 for activity type 2 is assigned as assignee, source and target for
@@ -949,7 +951,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
     $testCases = [
       'todays-activity' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => TRUE,
           'caseId' => NULL,
           'context' => 'activity',
@@ -962,7 +964,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       ],
       'todays-activity-filtered-by-range' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => TRUE,
           'caseId' => NULL,
           'context' => 'activity',
@@ -976,7 +978,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       ],
       'last-week-activity' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => TRUE,
           'caseId' => NULL,
           'context' => 'activity',
@@ -989,7 +991,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       ],
       'this-quarter-activity' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => TRUE,
           'caseId' => NULL,
           'context' => 'activity',
@@ -1002,7 +1004,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
       ],
       'activity-of-all-statuses' => [
         'params' => [
-          'contact_id' => 1,
+          'contact_id' => 18,
           'admin' => TRUE,
           'caseId' => NULL,
           'context' => 'activity',
@@ -1228,7 +1230,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
     $html = __FUNCTION__ . ' html {contact.display_name} {case.case_type_id:label}';
     $text = __FUNCTION__ . ' text {contact.display_name} {case.case_type_id:label}';
     $this->getTestForm('CRM_Case_Form_Task_Email', [
-      'to' => $contactId . '::' . 'email@example.com',
+      'to' => $this->getEmailIDs([$contactId]),
       'from_email_address' => 'from@example.com',
       'subject' => $subject,
       'html_message' => $html,
@@ -1311,7 +1313,7 @@ class CRM_Activity_BAO_ActivityTest extends CiviUnitTestCase {
     // @todo use getTestForm instead like the rest of the class.
     /** @var CRM_Contact_Form_Task_Email $form */
     $form = $this->getFormObject('CRM_Contact_Form_Task_Email', [
-      'to' => $contactId . '::' . 'email@example.com',
+      'to' => Email::get(FALSE)->addWhere('contact_id', '=', $contactId)->execute()->single()['id'],
       'from_email_address' => 'from@example.com',
       'subject' => $subject,
       'html_message' => $html,
@@ -1337,7 +1339,7 @@ $text
     $this->assertEquals($activity['subject'], $subject, 'Activity subject does not match.');
     $mut->checkMailLog([
       'From: from@example.com',
-      'To: Anthony Anderson <email@example.com>',
+      'To: Anthony Anderson <anthony_anderson@civicrm.org>',
       "Subject: $subject",
       $html,
       $text,
@@ -1372,7 +1374,7 @@ $text
     $html = __FUNCTION__ . ' html';
     $text = __FUNCTION__ . ' text';
     $this->getTestForm('CRM_Case_Form_Task_Email', [
-      'to' => $contactId . '::' . 'email@example.com',
+      'to' => $this->getEmailIDs([$contactId]),
       'from_email_address' => 'from@example.com',
       'subject' => '',
       'html_message' => $html,
@@ -1588,7 +1590,7 @@ $text
     $text = __FUNCTION__ . ' text';
 
     $this->getTestForm('CRM_Case_Form_Task_Email', [
-      'to' => $contactId . '::' . 'email@example.com',
+      'to' => $this->getEmailIDs([$contactId]),
       'from_email_address' => 'from@example.com',
       'subject' => $subject,
       'html_message' => $html,
@@ -1634,7 +1636,7 @@ $text
       'text_message' => $text,
       'campaign_id' => $campaign_id,
       'from_email_address' => 'from@example.com',
-      'to' => $contactId1 . '::email@example.com,' . $contactId2 . '::email2@example.com',
+      'to' => $this->getEmailIDs([$contactId1, $contactId2]),
     ], ['cid' => $contactId1 . ',' . $contactId2])
       ->processForm();
 
@@ -1688,9 +1690,7 @@ $textValue
       'text_message' => $text,
       'campaign_id' => $this->getCampaignID(),
       'from_email_address' => 'from@example.com',
-      'to' => $contactId1 . '::anthony_anderson@civicrm.org,'
-      . $contactId2 . '::anthony_anderson@civicrm.org,'
-      . $contactId3 . '::anthony_anderson@civicrm.org',
+      'to' => $this->getEmailIDs([$contactId1, $contactId2, $contactId3]),
       'attachFile_1' => [
         'uri' => $fileUri,
         'type' => 'text/plain',
@@ -1704,8 +1704,9 @@ $textValue
     $result = $this->callAPISuccess('Activity', 'get', ['campaign_id' => $this->getCampaignID()]);
     // An activity created for each of the two contacts
     $this->assertEquals(3, $result['count']);
-    foreach ($result['values'] as $activity) {
-      $displayName = $this->callAPISuccessGetValue('Contact', ['id' => $this->ids['Contact'][$activity['id']], 'return' => 'display_name']);
+    $contactIDs = [$contactId1, $contactId2, $contactId3];
+    foreach (array_values($result['values']) as $index => $activity) {
+      $displayName = $this->callAPISuccessGetValue('Contact', ['id' => $contactIDs[$index], 'return' => 'display_name']);
       $htmlValue = str_replace('{contact.display_name}', $displayName, $html);
       $textValue = str_replace('{contact.display_name}', $displayName, $text);
       $subjectValue = str_replace('{contact.display_name}', $displayName, $subject);
@@ -1753,8 +1754,7 @@ $textValue
       'text_message' => $text,
       'campaign_id' => $this->getCampaignID(),
       'from_email_address' => 'from@example.com',
-      'to' => $contactId1 . '::' . $contact['values'][0]['email_primary.email'] . ','
-      . $contactId2 . '::' . $contact['values'][1]['email_primary.email'],
+      'to' => $this->getEmailIDs([$contactId1, $contactId2]),
       'attachFile_1' => [
         'uri' => $fileUri,
         'type' => 'text/plain',
@@ -1875,6 +1875,23 @@ $textValue
   }
 
   /**
+   * Get ActivityContact IDs keyed by "record_type_id:contact_id"
+   *
+   * @param int $activityId
+   *
+   * @return array
+   */
+  private function getActivityContactIds(int $activityId): array {
+    return ActivityContact::get(FALSE)
+      ->addSelect('id', 'CONCAT(record_type_id, ":", contact_id) AS record_key')
+      ->addWhere('activity_id', '=', $activityId)
+      ->addOrderBy('record_type_id')
+      ->addOrderBy('contact_id')
+      ->execute()
+      ->column('id', 'record_key');
+  }
+
+  /**
    * Test multiple variations of target and assignee contacts in create
    * and edit mode.
    *
@@ -1899,6 +1916,7 @@ $textValue
 
     // Create an activity first if specified.
     $activity = NULL;
+    $recordsAfterFirstSave = [];
     if (!empty($do_first)) {
       if (!empty($do_first['targets'])) {
         // e.g. if it is [1], then pick $someContacts[1]. If it's [1,2], then
@@ -1911,6 +1929,7 @@ $textValue
 
       $activity = CRM_Activity_BAO_Activity::create($params);
       $this->assertNotEmpty($activity->id);
+      $recordsAfterFirstSave = $this->getActivityContactIds($activity->id);
 
       $params['id'] = $activity->id;
     }
@@ -1926,14 +1945,21 @@ $textValue
       1 => [$activity->id, 'Integer'],
       2 => [CRM_Core_PseudoConstant::getKey('CRM_Activity_BAO_ActivityContact', 'record_type_id', 'Activity Targets'), 'Integer'],
     ];
-    $this->assertEquals($params['target_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
+    $this->assertEqualsCanonicalizing($params['target_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
 
     // Check assignees
     $queryParams = [
       1 => [$activity->id, 'Integer'],
       2 => [CRM_Core_PseudoConstant::getKey('CRM_Activity_BAO_ActivityContact', 'record_type_id', 'Activity Assignees'), 'Integer'],
     ];
-    $this->assertEquals($params['assignee_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
+    $this->assertEqualsCanonicalizing($params['assignee_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
+
+    $recordsAfterSecondSave = $this->getActivityContactIds($activity->id);
+    $this->assertSame(
+      array_intersect_key($recordsAfterFirstSave, $recordsAfterSecondSave),
+      array_intersect_key($recordsAfterSecondSave, $recordsAfterFirstSave),
+      'Contacts kept between the two saves should keep their ActivityContact IDs'
+    );
 
     // Clean up
     foreach ($this->someContacts as $cid) {
@@ -2006,14 +2032,14 @@ $textValue
       1 => [$activity->id, 'Integer'],
       2 => [CRM_Core_PseudoConstant::getKey('CRM_Activity_BAO_ActivityContact', 'record_type_id', 'Activity Targets'), 'Integer'],
     ];
-    $this->assertEquals((array) $params['target_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
+    $this->assertEqualsCanonicalizing((array) $params['target_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
 
     // Check assignees
     $queryParams = [
       1 => [$activity->id, 'Integer'],
       2 => [CRM_Core_PseudoConstant::getKey('CRM_Activity_BAO_ActivityContact', 'record_type_id', 'Activity Assignees'), 'Integer'],
     ];
-    $this->assertEquals((array) $params['assignee_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
+    $this->assertEqualsCanonicalizing((array) $params['assignee_contact_id'], array_column(CRM_Core_DAO::executeQuery('SELECT contact_id FROM civicrm_activity_contact WHERE activity_id = %1 AND record_type_id = %2', $queryParams)->fetchAll(), 'contact_id'));
 
     // Clean up
     foreach ($this->someContacts as $cid) {
@@ -2538,6 +2564,39 @@ $textValue
           'assignees' => [4],
         ],
       ],
+      // An existing assignee also becomes a target
+      52 => [
+        'do first' => [
+          'targets' => [1],
+          'assignees' => [3],
+        ],
+        'do second' => [
+          'targets' => [1, 3],
+          'assignees' => [3],
+        ],
+      ],
+      // An existing target also becomes an assignee
+      53 => [
+        'do first' => [
+          'targets' => [1],
+          'assignees' => [3],
+        ],
+        'do second' => [
+          'targets' => [1],
+          'assignees' => [1, 3],
+        ],
+      ],
+      // Target and assignee swap roles
+      54 => [
+        'do first' => [
+          'targets' => [1],
+          'assignees' => [3],
+        ],
+        'do second' => [
+          'targets' => [3],
+          'assignees' => [1],
+        ],
+      ],
     ];
   }
 
@@ -2596,6 +2655,20 @@ $textValue
       ], 0)['id'];
     }
     return $this->ids['Campaign'][0];
+  }
+
+  /**
+   * Get the email ids of the given contacts, as the email form's 'to' value.
+   *
+   * @param int[] $contactIDs
+   *
+   * @return string
+   */
+  protected function getEmailIDs(array $contactIDs): string {
+    return implode(',', Email::get(FALSE)
+      ->addWhere('contact_id', 'IN', $contactIDs)
+      ->addOrderBy('id')
+      ->execute()->column('id'));
   }
 
 }

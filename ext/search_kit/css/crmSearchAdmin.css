@@ -1,10 +1,11 @@
-#bootstrap-theme .crm-search-nav-tabs {
-  position: relative;
+#bootstrap-theme.crm-search-listing .panel-heading {
+  padding-bottom: 0;
 }
-#bootstrap-theme .crm-search-nav-tabs > div.btn-group {
-  position: absolute;
-  right: 0;
-  top: 0;
+#bootstrap-theme.crm-search-listing .panel-heading .nav-tabs {
+  border-bottom: 0;
+}
+#bootstrap-theme.crm-search-listing .crm-search-display-table table {
+  margin-bottom: 0;
 }
 
 #bootstrap-theme #crm-saved-search-label {
@@ -117,10 +118,6 @@
 
 #bootstrap-theme.crm-search fieldset div.api4-input {
   margin-bottom: 10px;
-}
-
-#bootstrap-theme.crm-search fieldset div.api4-input.ui-sortable-helper {
-  background-color: rgba(255, 255, 255, .9);
 }
 
 #bootstrap-theme.crm-search fieldset div.api4-input.ui-sortable-helper {

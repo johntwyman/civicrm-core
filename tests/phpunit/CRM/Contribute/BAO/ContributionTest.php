@@ -48,7 +48,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $contactID,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -78,6 +78,22 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
 
     $this->assertEquals($params['trxn_id'], $contribution['trxn_id'], 'Check for transaction id .');
     $this->assertEquals($params['net_amount'], $contribution['net_amount'], 'Check for Amount update.');
+
+    // The fee increase (5 -> 10) should have recorded its own financial_trxn, linked
+    // to the contribution itself rather than to whatever happened to be in the raw
+    // update params.
+    $feeTrxn = FinancialTrxn::get(FALSE)
+      ->addWhere('is_payment', '=', FALSE)
+      ->addWhere('total_amount', '=', 5)
+      ->addOrderBy('id', 'DESC')
+      ->execute()->first();
+    $this->assertNotEmpty($feeTrxn, 'The fee increase should create its own financial_trxn.');
+    $entityFinancialTrxn = EntityFinancialTrxn::get(FALSE)
+      ->addWhere('financial_trxn_id', '=', $feeTrxn['id'])
+      ->addWhere('entity_table', '=', 'civicrm_contribution')
+      ->execute()->single();
+    $this->assertEquals('civicrm_contribution', $entityFinancialTrxn['entity_table']);
+    $this->assertEquals($contribution['id'], $entityFinancialTrxn['entity_id']);
   }
 
   /**
@@ -105,7 +121,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $this->ids['Contact']['individual_0'],
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -200,7 +216,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $contactId,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -299,7 +315,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $param = [
       'contact_id' => $this->ids['Contact']['individual_0'],
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -348,7 +364,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $contributionParams = [
       'contact_id' => $contactId,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -390,7 +406,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $param = [
       'contact_id' => $this->individualCreate(),
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -425,7 +441,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $contributionID = $this->callAPISuccess('Contribution', 'create', [
       'contact_id' => $this->individualCreate(),
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -460,7 +476,7 @@ class CRM_Contribute_BAO_ContributionTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $contactId,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 2,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -548,7 +564,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
     $priceField = CRM_Price_BAO_PriceField::create($paramsField);
     $eventParams = [
       'id' => $this->getEventID(),
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'is_monetary' => 1,
     ];
     CRM_Event_BAO_Event::create($eventParams);
@@ -556,7 +572,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
 
     $priceFields = $this->callAPISuccess('PriceFieldValue', 'get', ['price_field_id' => $priceField->id]);
     $participantParams = [
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'event_id' => $this->getEventID(),
       'role_id' => 1,
       'status_id' => 14,
@@ -568,7 +584,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
       'total_amount' => 300,
       'currency' => 'USD',
       'contact_id' => $this->ids['Contact']['individual_0'],
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'contribution_status_id' => 'Pending',
       'participant_id' => $participant->id,
       'sequential' => TRUE,
@@ -612,7 +628,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
     $params = [
       'contact_id' => $this->individualCreate(),
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 1,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -662,7 +678,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
       'contact_id' => $contactID,
       'receive_date' => '2010-01-20',
       'total_amount' => 100,
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'contribution_status_id' => 'Pending',
     ];
     $order = $this->callAPISuccess('Order', 'create', $params);
@@ -755,7 +771,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
     $params = [
       'contact_id' => $this->individualCreate(),
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 'Pending',
       'payment_instrument_id' => 1,
       'receive_date' => '20080522000000',
@@ -895,6 +911,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
    * @throws \CRM_Core_Exception
    */
   public function testProcessOnBehalfOrganization(): void {
+    $mainLocationTypeID = $this->getLocationTypeID('Main');
     $orgInfo = [
       'phone' => '11111111',
       'email' => 'testorg@gmail.com',
@@ -931,7 +948,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
         3 => [
           'street_address' => $orgInfo['street_address'],
           'city' => $orgInfo['city'],
-          'location_type_id' => 3,
+          'location_type_id' => $this->getLocationTypeID('Main'),
           'postal_code' => $orgInfo['postal_code'],
           'country' => 'US',
           'state_province' => 'AA',
@@ -941,13 +958,13 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
     ];
     $fields = [
       'organization_name' => 1,
-      'phone-3-1' => 1,
-      'email-3' => 1,
-      'street_address-3' => 1,
-      'city-3' => 1,
-      'postal_code-3' => 1,
-      'country-3' => 1,
-      'state_province-3' => 1,
+      "phone-$mainLocationTypeID-1" => 1,
+      "email-$mainLocationTypeID" => 1,
+      "street_address-$mainLocationTypeID" => 1,
+      "city-$mainLocationTypeID" => 1,
+      "postal_code-$mainLocationTypeID" => 1,
+      "country-$mainLocationTypeID" => 1,
+      "state_province-$mainLocationTypeID" => 1,
     ];
     $empty = [];
     CRM_Contribute_Form_Contribution_Confirm::processOnBehalfOrganization($behalfOrganization, $contactID, $empty, $empty, $empty);
@@ -997,7 +1014,7 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
     $checkAgainst = [
       'financial_trxn_id.to_financial_account_id.name' => 'Deferred Revenue - Event Fee',
       'financial_trxn_id.from_financial_account_id.name' => 'Event Fee',
-      'financial_trxn_id' => '2',
+      'financial_trxn_id' => FinancialTrxn::get(FALSE)->addWhere('is_payment', '=', FALSE)->execute()->single()['id'],
     ];
     $result = $this->callAPISuccessGetSingle('EntityFinancialTrxn', [
       'return' => [
@@ -1394,6 +1411,68 @@ WHERE eft.entity_id = %1 AND ft.to_financial_account_id <> %2";
     $activityContact = $this->callAPISuccessGetSingle('ActivityContact', $activityContactParams);
 
     $this->assertEquals($activityContact['contact_id'], $contactId_2, 'Check target contact ID matches the second contact');
+  }
+
+  /**
+   * Test that check_number is retained for a payment instrument whose 'grouping' includes
+   * 'check_number', not just the reserved 'Check' instrument, and is nulled out for one that
+   * doesn't.
+   */
+  public function testCheckNumberKeptForInstrumentWithCheckNumberField(): void {
+    $checkInstrument = $this->createTestEntity('OptionValue', [
+      'option_group_id:name' => 'payment_instrument',
+      'name' => 'International Check',
+      'label' => 'International Check',
+      'value' => 90,
+      'grouping' => json_encode(['check_number']),
+    ], 'internationalCheck');
+
+    $checkContribution = $this->createTestEntity('Contribution', [
+      'total_amount' => 10,
+      'contact_id' => $this->individualCreate(),
+      'financial_type_id:name' => 'Donation',
+      'contribution_status_id:name' => 'Completed',
+      'payment_instrument_id' => $checkInstrument['value'],
+      'check_number' => 'bouncer',
+    ], 'checkContribution');
+    $this->assertEquals('bouncer', Contribution::get(FALSE)
+      ->addSelect('check_number')
+      ->addWhere('id', '=', $checkContribution['id'])
+      ->execute()->first()['check_number']);
+
+    $cashContribution = $this->createTestEntity('Contribution', [
+      'total_amount' => 10,
+      'contact_id' => $this->individualCreate(),
+      'financial_type_id:name' => 'Donation',
+      'contribution_status_id:name' => 'Completed',
+      'payment_instrument_id:name' => 'Cash',
+      'check_number' => 'bouncer',
+    ], 'cashContribution');
+    $this->assertNull(Contribution::get(FALSE)
+      ->addSelect('check_number')
+      ->addWhere('id', '=', $cashContribution['id'])
+      ->execute()->first()['check_number']);
+  }
+
+  /**
+   * Test CRM_Contribute_BAO_Contribution::getPaymentInstrumentFields(), which is backed by
+   * CRM_Core_BAO_OptionValue::getOptionValuesArray()'s cache.
+   */
+  public function testGetPaymentInstrumentFields(): void {
+    $checkInstrument = $this->createTestEntity('OptionValue', [
+      'option_group_id:name' => 'payment_instrument',
+      'name' => 'International Check',
+      'label' => 'International Check',
+      'value' => 90,
+      'grouping' => json_encode(['check_number']),
+    ], 'internationalCheck');
+    $this->assertEquals(['check_number'], CRM_Contribute_BAO_Contribution::getPaymentInstrumentFields($checkInstrument['value']));
+
+    $cashID = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Cash');
+    $this->assertEquals([], CRM_Contribute_BAO_Contribution::getPaymentInstrumentFields($cashID));
+
+    $checkID = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check');
+    $this->assertEquals(['check_number'], CRM_Contribute_BAO_Contribution::getPaymentInstrumentFields($checkID));
   }
 
   public function testPrecisionSettingUpdate(): void {

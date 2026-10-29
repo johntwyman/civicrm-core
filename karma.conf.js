@@ -57,6 +57,7 @@ module.exports = function(config) {
       'bower_components/angular-ui-sortable/sortable.js',
       'bower_components/angular-unsavedChanges/dist/unsavedChanges.js',
       'js/crm.ajax.js',
+      'ext/chart_kit/js/components/civi-search-display.js',
       'ang/*.js',
       'ang/**/*.js',
       'tests/karma/lib/*.js',
@@ -68,6 +69,12 @@ module.exports = function(config) {
       'ext/civi_case/ang/*.js',
       'ext/civi_case/ang/**/*.js',
       'ext/civi_case/ang/**/*.html',
+      // Afform pulls every field-input-type module into `af`'s requires, so the
+      // afCheckout module (from civi_contribute) must load or any spec that uses
+      // `af` - e.g. crmMailing - fails to instantiate it.
+      'ext/civi_contribute/ang/*.js',
+      'ext/civi_contribute/ang/**/*.js',
+      'ext/civi_contribute/ang/**/*.html',
       'ext/afform/core/ang/*.js',
       'ext/afform/core/ang/**/*.js',
       'ext/afform/core/ang/**/*.html'

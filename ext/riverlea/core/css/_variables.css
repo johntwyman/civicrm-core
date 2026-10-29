@@ -140,8 +140,6 @@
   --crm-btn-height: 28px;
   --crm-btn-icon-spacing: var(--crm-l-small);
   --crm-btn-icon-size: auto;
-  --crm-btn-cancel-bg-color: var(--crm-danger-color);
-  --crm-btn-cancel-text-color: var(--crm-danger-text-color);
   --crm-btn-info-bg-color: var(--crm-info-color);
   --crm-btn-info-text-color: var(--crm-info-text-color);
   --crm-btn-warning-bg-color: var(--crm-warning-color);
@@ -306,7 +304,7 @@
   --crm-contact-tab-align: none;
   --crm-contact-tab-hang: 0; /* lip to extend tab flush with active region - set to 0 for no lip */
   --crm-contact-tab-radius: var(--crm-contact-radius);
-  --crm-contact-icon-size: var(--crm-l-reg);
+  --crm-contact-icon-size: var(--crm-font-size);
   --crm-contact-summary-row-bg-color: var(--crm-container-bg-color);
   --crm-contact-heading-inset: 0;
   --crm-contact-box-shadow: 0;
@@ -356,7 +354,7 @@
   --crm-dashlet-header-border: unset;
   --crm-dashlet-header-border-width: unset;
   --crm-dashlet-header-font-size: var(--crm-font-size);
-  --crm-dashlet-header-padding: var(--crm-l-small);
+  --crm-dashlet-header-padding: var(--crm-accordion-header-padding);
   --crm-dashlet-content-padding: var(--crm-dashlet-padding) 0;
   --crm-dashlet-tabs-border: 0;
   --crm-dashlet-radius: var(--crm-l-radius);

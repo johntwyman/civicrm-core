@@ -9,6 +9,7 @@
  +--------------------------------------------------------------------+
  */
 
+use Civi\Api4\ActivityContact;
 use Civi\Api4\Contact;
 use Civi\Test\ACLPermissionTrait;
 
@@ -1039,14 +1040,14 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
         'contact_id' => $this->ids['Contact']['first'],
         'receive_date' => '2016-10-01',
         'revenue_recognition_date' => (new DateTime('+3 month'))->format('Y-m-t'),
-        'financial_type_id' => 2,
+        'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
       ]
     );
     $this->contributionCreate(
       [
         'contact_id' => $this->ids['Contact']['first'],
         'revenue_recognition_date' => (new DateTime('+22 month'))->format('Y-m-t'),
-        'financial_type_id' => 4,
+        'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
         'trxn_id' => NULL,
         'invoice_id' => NULL,
       ]
@@ -1055,7 +1056,7 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
       [
         'contact_id' => $this->ids['Contact']['second'],
         'revenue_recognition_date' => (new DateTime('+1 month'))->format('Y-m-t'),
-        'financial_type_id' => 4,
+        'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
         'trxn_id' => NULL,
         'invoice_id' => NULL,
       ]
@@ -1065,7 +1066,7 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
         'contact_id' => $this->ids['Contact']['second'],
         'receive_date' => '2016-03-01',
         'revenue_recognition_date' => (new DateTime('+4 month'))->format('Y-m-t'),
-        'financial_type_id' => 2,
+        'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
         'trxn_id' => NULL,
         'invoice_id' => NULL,
       ]
@@ -1228,7 +1229,7 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
       'civicrm_phone_contact_source_phone' => NULL,
       'civicrm_phone_contact_assignee_phone' => NULL,
       'civicrm_phone_contact_target_phone' => NULL,
-      'civicrm_activity_id' => '1',
+      'civicrm_activity_id' => $this->activityID,
       'civicrm_activity_source_record_id' => NULL,
       'civicrm_activity_activity_type_id' => 'Meeting',
       'civicrm_activity_activity_subject' => 'Very secret meeting',
@@ -1573,12 +1574,12 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
     $contact = $this->individualCreate();
     // Two contributions with different financial types.
     // We don't really care which types, just different.
-    $this->contributionCreate(['contact_id' => $contact, 'receive_date' => (date('Y') - 1) . '-07-01', 'financial_type_id' => 1, 'total_amount' => '10']);
-    $this->contributionCreate(['contact_id' => $contact, 'receive_date' => (date('Y') - 1) . '-08-01', 'financial_type_id' => 2, 'total_amount' => '20']);
+    $this->contributionCreate(['contact_id' => $contact, 'receive_date' => (date('Y') - 1) . '-07-01', 'financial_type_id' => $this->getFinancialTypeID('Donation'), 'total_amount' => '10']);
+    $this->contributionCreate(['contact_id' => $contact, 'receive_date' => (date('Y') - 1) . '-08-01', 'financial_type_id' => $this->getFinancialTypeID('Member Dues'), 'total_amount' => '20']);
     $rows = $this->callAPISuccess('report_template', 'getrows', [
       'report_id' => 'contribute/history',
       'financial_type_id_op' => 'in',
-      'financial_type_id_value' => [1],
+      'financial_type_id_value' => [$this->getFinancialTypeID('Donation')],
       'options' => ['metadata' => ['sql']],
       'fields' => [
         'relationship_type_id' => 1,
@@ -1599,10 +1600,10 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
     // our sorting options are limited in this report - default is last name so let's ensure order
     $contact1 = $this->individualCreate(['last_name' => 'Aardvark']);
     $contact2 = $this->individualCreate(['last_name' => 'Zebra']);
-    $this->contributionCreate(['contact_id' => $contact1, 'receive_date' => (date('Y') - 1) . '-07-01', 'financial_type_id' => 1, 'total_amount' => '10']);
-    $this->contributionCreate(['contact_id' => $contact1, 'receive_date' => (date('Y') - 1) . '-08-01', 'financial_type_id' => 1, 'total_amount' => '20']);
-    $this->contributionCreate(['contact_id' => $contact1, 'receive_date' => date('Y') . '-01-01', 'financial_type_id' => 1, 'total_amount' => '40']);
-    $this->contributionCreate(['contact_id' => $contact2, 'receive_date' => (date('Y') - 1) . '-09-01', 'financial_type_id' => 1, 'total_amount' => '80']);
+    $this->contributionCreate(['contact_id' => $contact1, 'receive_date' => (date('Y') - 1) . '-07-01', 'financial_type_id' => $this->getFinancialTypeID('Donation'), 'total_amount' => '10']);
+    $this->contributionCreate(['contact_id' => $contact1, 'receive_date' => (date('Y') - 1) . '-08-01', 'financial_type_id' => $this->getFinancialTypeID('Donation'), 'total_amount' => '20']);
+    $this->contributionCreate(['contact_id' => $contact1, 'receive_date' => date('Y') . '-01-01', 'financial_type_id' => $this->getFinancialTypeID('Donation'), 'total_amount' => '40']);
+    $this->contributionCreate(['contact_id' => $contact2, 'receive_date' => (date('Y') - 1) . '-09-01', 'financial_type_id' => $this->getFinancialTypeID('Donation'), 'total_amount' => '80']);
     $rows = $this->callAPISuccess('report_template', 'getrows', [
       'report_id' => 'contribute/repeat',
       'receive_date1' => 'previous.year',
@@ -1647,6 +1648,7 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
     \Civi::settings()->set('logging', 1);
     $this->createContactsWithActivities();
     $this->doQuestionableStuffInASeparateFunctionSoNobodyNotices();
+    $originalAssigneeRecordID = $this->getActivityAssigneeRecordID();
 
     // Do something that creates an update record.
     $this->callAPISuccess('Activity', 'create', [
@@ -1654,6 +1656,7 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
       'assignee_contact_id' => $this->contactIDs[0],
       'details' => 'Edited details',
     ]);
+    $newAssigneeRecordID = $this->getActivityAssigneeRecordID();
 
     // In normal UI flow you would go to the summary report and drill down,
     // but here we need to go directly to the connection id, so find out what
@@ -1682,13 +1685,13 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
       // here's the delete
       0 => [
         'field' => [
-          0 => 'Activity ID (id: 2)',
-          1 => 'Contact ID (id: 2)',
-          2 => 'Activity Contact Type (id: 2)',
+          0 => "Activity ID (record id: $originalAssigneeRecordID)",
+          1 => "Contact ID (record id: $originalAssigneeRecordID)",
+          2 => "Activity Contact Type (record id: $originalAssigneeRecordID)",
         ],
         'from' => [
-          0 => 'Very secret meeting (id: 1)',
-          1 => 'Mr. Anthony Łąchowski-Roberts II (id: 4)',
+          0 => 'Very secret meeting (id: ' . $this->activityID . ')',
+          1 => 'Mr. Anthony Łąchowski-Roberts II (id: ' . $this->contactIDs[1] . ')',
           2 => 'Activity Assignees',
         ],
         'to' => [
@@ -1700,9 +1703,9 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
       // this is the insert
       1 => [
         'field' => [
-          0 => 'Activity ID (id: 5)',
-          1 => 'Contact ID (id: 5)',
-          2 => 'Activity Contact Type (id: 5)',
+          0 => "Activity ID (record id: $newAssigneeRecordID)",
+          1 => "Contact ID (record id: $newAssigneeRecordID)",
+          2 => "Activity Contact Type (record id: $newAssigneeRecordID)",
         ],
         'from' => [
           0 => '',
@@ -1710,8 +1713,8 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
           2 => '',
         ],
         'to' => [
-          0 => 'Very secret meeting (id: 1)',
-          1 => 'Mr. Anthony Brzęczysław II (id: 3)',
+          0 => 'Very secret meeting (id: ' . $this->activityID . ')',
+          1 => 'Mr. Anthony Brzęczysław II (id: ' . $this->contactIDs[0] . ')',
           2 => 'Activity Assignees',
         ],
       ],
@@ -1719,6 +1722,18 @@ class api_v3_ReportTemplateTest extends CiviUnitTestCase {
     $this->assertEquals($expectedValues, $values);
 
     \Civi::settings()->set('logging', 0);
+  }
+
+  /**
+   * Get the id of the assignee ActivityContact record for $this->activityID.
+   *
+   * The record is created as a side effect of creating or updating the activity.
+   */
+  private function getActivityAssigneeRecordID(): int {
+    return ActivityContact::get(FALSE)
+      ->addWhere('activity_id', '=', $this->activityID)
+      ->addWhere('record_type_id:name', '=', 'Activity Assignees')
+      ->execute()->single()['id'];
   }
 
   /**

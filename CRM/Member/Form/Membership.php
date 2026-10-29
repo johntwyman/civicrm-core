@@ -9,7 +9,12 @@
  +--------------------------------------------------------------------+
  */
 
+use Civi\Api4\Contribution;
 use Civi\Api4\ContributionRecur;
+use Civi\Api4\LineItem;
+use Civi\Api4\Membership;
+use Civi\Api4\Order;
+use Civi\Payment\Exception\PaymentProcessorException;
 
 /**
  *
@@ -29,14 +34,125 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    */
   public $_mode;
 
-  protected $_memTypeSelected;
-
   /**
    * Contact ID of the member.
    *
    * @var int
    */
   public $_contactID = NULL;
+
+  /**
+   * @return int|null
+   * @throws \CRM_Core_Exception
+   */
+  private function getUnpaidMembershipStatus(): ?int {
+    // If is_override is empty then status_id="" (because it's a hidden field). That will trigger a recalculation in CRM_Member_BAO_Membership::create
+    //   unless is_override = TRUE or skipStatusCal = TRUE. But skipStatusCal also skips date calculations.
+    // If we are recording a contribution we *do* want to trigger a recalculation of membership status so it can go from Pending->New/Current
+    // So here we check if status_id is empty, default (ie. status in database) is pending and that we are not recording a contribution -
+    //   If all those are true then we skip the status calculation and explicitly set the pending status (to avoid a DB constraint status_id=0).
+    // Test cover in `CRM_Member_Form_MembershipTest::testOverrideSubmit()`.
+    $pendingMembershipStatusId = CRM_Core_PseudoConstant::getKey('CRM_Member_BAO_Membership', 'status_id', 'Pending');
+    if (!empty($this->getSubmittedValue('status_id'))
+      || empty($this->_defaultValues['status_id'])
+      || $this->_mode
+      || $this->getSubmittedValue('record_contribution')
+      || (int) $this->_defaultValues['status_id'] !== $pendingMembershipStatusId
+    ) {
+      return NULL;
+    }
+    $isPaymentPending = FALSE;
+    if ($this->getMembershipID()) {
+      $contributionId = CRM_Member_BAO_MembershipPayment::getLatestContributionIDFromLineitemAndFallbackToMembershipPayment($this->getMembershipID());
+      if ($contributionId) {
+        $isPaymentPending = Contribution::get(FALSE)
+          ->addSelect('contribution_status_id:name')
+          ->addWhere('id', '=', $contributionId)
+          ->execute()
+          ->first()['contribution_status_id:name'] === 'Pending';
+      }
+    }
+    return $isPaymentPending ? $this->_defaultValues['status_id'] : NULL;
+  }
+
+  /**
+   * Get the status to apply when recording a new, non-completed contribution
+   * (eg. pay-later) against a membership.
+   *
+   * Without this, a pay-later membership would get a date-calculated status
+   * (eg. 'New'/'Current') despite no payment having been received yet.
+   *
+   * @return int|null
+   * @throws \CRM_Core_Exception
+   */
+  private function getPendingContributionMembershipStatus(): ?int {
+    if (!$this->getSubmittedValue('record_contribution') || !empty($this->getSubmittedValue('is_override'))) {
+      return NULL;
+    }
+    $completedContributionStatusId = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
+    if ((int) $this->getSubmittedValue('contribution_status_id') === $completedContributionStatusId) {
+      return NULL;
+    }
+    return (int) CRM_Core_PseudoConstant::getKey('CRM_Member_BAO_Membership', 'status_id', 'Pending');
+  }
+
+  /**
+   * @return array
+   * @throws \CRM_Core_Exception
+   * @throws \Civi\API\Exception\UnauthorizedException
+   */
+  private function saveOrder(): array {
+    $contributionAddressID = CRM_Contribute_BAO_Contribution::createAddress($this->getSubmittedValues());
+    $contribution = Order::create(FALSE)
+      ->setContributionValues($this->getContributionValues() + [
+        'contact_id' => $this->_contributorContactID,
+        'address_id' => $contributionAddressID,
+        'contribution_recur_id' => $this->getContributionRecurID(),
+      ])
+      ->setLineItems($this->getLineItemForOrderApi())
+      ->execute()->single();
+    $this->ids['Contribution'] = $contribution['id'];
+    $this->setMembershipIDsFromOrder($contribution);
+    $this->createSoftCredit($contribution['id']);
+    return $contribution;
+  }
+
+  /**
+   * @param $result
+   *
+   * @return void
+   * @throws \CRM_Core_Exception
+   */
+  private function addPayment($result): void {
+    civicrm_api3('Payment', 'create', [
+      'fee_amount' => $result['fee_amount'] ?? 0,
+      'total_amount' => $this->order->getTotalAmount(),
+      'payment_instrument_id' => $this->getPaymentInstrumentID(),
+      'trxn_id' => $result['trxn_id'] ?? NULL,
+      'contribution_id' => $this->getContributionID(),
+      'is_send_contribution_notification' => FALSE,
+      'card_type_id' => $this->getCardTypeID(),
+      'pan_truncation' => $this->getPanTruncation(),
+      'check_number' => $this->getSubmittedValue('check_number'),
+    ]);
+  }
+
+  /**
+   * @param int $contributionID
+   *
+   * @return array
+   * @throws \CRM_Core_Exception
+   */
+  private function submitPayment(int $contributionID): array {
+    $paymentParams = $this->getPaymentParams();
+    $paymentParams['contactID'] = $this->_contactID;
+    $paymentParams['contributionID'] = $contributionID;
+    $paymentParams['contributionRecurID'] = $this->getContributionRecurID();
+    $paymentParams['is_recur'] = $this->isCreateRecurringContribution();
+    $payment = $this->_paymentProcessor['object'];
+    $payment->setBackOffice(TRUE);
+    return $payment->doPayment($paymentParams);
+  }
 
   /**
    * Set entity fields to be assigned to the form.
@@ -104,6 +220,19 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
       }
     }
     return $memTypeSelected;
+  }
+
+  /**
+   * Get the contribution ID.
+   *
+   * @api This function will not change in a minor release and is supported for
+   * use outside of core. This annotation / external support for properties
+   * is only given where there is specific test cover.
+   *
+   * @return int|null
+   */
+  public function getContributionID(): ?int {
+    return $this->ids['Contribution'] ?? $this->contributionID;
   }
 
   /**
@@ -360,7 +489,7 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
             '' => ts('Choose price set'),
           ] + $priceSets,
           NULL, ['onchange' => "buildAmount( this.value );"]
-        );
+        )->setOptionTextEscaped();
       }
     }
     $this->assign('hasPriceSets', $buildPriceSet ?? NULL);
@@ -496,7 +625,7 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
       $this->add('select', 'payment_instrument_id',
         ts('Payment Method'),
         ['' => ts('- select -')] + CRM_Contribute_PseudoConstant::paymentInstrument(),
-        FALSE, ['onChange' => "return showHideByValue('payment_instrument_id','4','checkNumber','table-row','select',false);"]
+        FALSE
       );
       $this->add('text', 'trxn_id', ts('Transaction ID'));
       $this->addRule('trxn_id', ts('Transaction ID already exists in Database.'),
@@ -599,7 +728,6 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
       }
     }
     $form->assign('priceSet', $form->_priceSet);
-
     $checklifetime = FALSE;
     foreach ($this->getPriceFieldMetaData() as $id => $field) {
       $options = $field['options'] ?? NULL;
@@ -845,27 +973,6 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   }
 
   /**
-   * @return \CRM_Financial_BAO_Order
-   * @throws \CRM_Core_Exception
-   */
-  protected function getOrder(): CRM_Financial_BAO_Order {
-    if (!$this->order) {
-      $this->initializeOrder();
-    }
-    return $this->order;
-  }
-
-  /**
-   * @throws \CRM_Core_Exception
-   */
-  protected function initializeOrder(): void {
-    $this->order = new CRM_Financial_BAO_Order();
-    $this->order->setPriceSetID($this->getPriceSetID());
-    $this->order->setForm($this);
-    $this->order->setPriceSelectionFromUnfilteredInput($this->getSubmittedValues());
-  }
-
-  /**
    * Process the form submission.
    *
    * @throws \CRM_Core_Exception
@@ -914,8 +1021,6 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   /**
    * Send email receipt.
    *
-   * @param array $formValues
-   *
    * @throws \CRM_Core_Exception
    *
    * @deprecated
@@ -923,16 +1028,7 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    *   & needs rationalising.
    *
    */
-  protected function emailReceipt($formValues) {
-    // retrieve 'from email id' for acknowledgement
-    $receiptFrom = $formValues['from_email_address'] ?? NULL;
-
-    if (!empty($formValues['is_renew'])) {
-      $this->assign('receiptType', 'membership renewal');
-    }
-    else {
-      $this->assign('receiptType', 'membership signup');
-    }
+  protected function emailReceipt() {
 
     if ((empty($this->_contributorDisplayName) || empty($this->_contributorEmail))) {
       // in this case the form is being called statically from the batch editing screen
@@ -941,16 +1037,16 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
       // however, we can assume that the contact_id passed in by the batch
       // function will be the recipient
       [$this->_contributorDisplayName, $this->_contributorEmail]
-        = CRM_Contact_BAO_Contact_Location::getEmailDetails($formValues['contact_id']);
+        = CRM_Contact_BAO_Contact_Location::getEmailDetails($this->getContactID());
       if (empty($this->_receiptContactId)) {
-        $this->_receiptContactId = $formValues['contact_id'];
+        $this->_receiptContactId = $this->getContactID();
       }
     }
 
     CRM_Core_BAO_MessageTemplate::sendTemplate(
       [
         'workflow' => 'membership_offline_receipt',
-        'from' => $receiptFrom,
+        'from' => $this->getSubmittedValue('from_email_address'),
         'toName' => $this->_contributorDisplayName,
         'toEmail' => $this->_contributorEmail,
         'PDFFilename' => ts('receipt') . '.pdf',
@@ -958,7 +1054,7 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
         'isTest' => (bool) ($this->_action & CRM_Core_Action::PREVIEW),
         'modelProps' => [
           'userEnteredText' => $this->getSubmittedValue('receipt_text'),
-          'contributionID' => $formValues['contribution_id'],
+          'contributionID' => $this->getContributionID(),
           'contactID' => $this->_receiptContactId,
           'membershipID' => $this->getMembershipID(),
         ],
@@ -974,204 +1070,36 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    * @throws \CRM_Core_Exception
    */
   public function submit(): void {
-    $this->storeContactFields($this->_params);
+    $this->storeContactFields($this->getSubmittedValues());
     $this->beginPostProcess();
 
-    $params = $softParams = [];
-
     $this->processBillingAddress($this->getContributionContactID(), (string) $this->_contributorEmail);
-    $formValues = $this->_params;
-    $formValues = $this->setPriceSetParameters($formValues);
 
-    if ($this->_id) {
-      $params['id'] = $this->_id;
-    }
-
-    // Set variables that we normally get from context.
-    // In form mode these are set in preProcess.
-    //TODO: set memberships, fixme
-    $this->setContextVariables($formValues);
     $originalMembershipType = $this->getMembershipValue('membership_type_id');
+    $hasContribution = $this->_mode || $this->getSubmittedValue('record_contribution');
 
-    $selectedMemberships = $this->_memTypeSelected = self::getSelectedMemberships(
-      $this->_priceSet,
-      $formValues
-    );
-    $formValues['financial_type_id'] = $this->getFinancialTypeID();
-
-    $isQuickConfig = $this->_priceSet['is_quick_config'];
-
-    $lineItem = [$this->order->getPriceSetID() => $this->order->getLineItems()];
-
-    $params['tax_amount'] = $this->order->getTotalTaxAmount();
-    $params['total_amount'] = $this->order->getTotalAmount();
-    $params['contact_id'] = $this->_contactID;
-
-    $params = array_merge($params, $this->getFormMembershipParams());
-    $membershipTypeValues = $this->getMembershipParameters();
-
-    //CRM-13981, allow different person as a soft-contributor of chosen type
-    if ($this->_contributorContactID != $this->_contactID) {
-      $params['contribution_contact_id'] = $this->_contributorContactID;
-      if (!empty($formValues['soft_credit_type_id'])) {
-        $softParams['soft_credit_type_id'] = $formValues['soft_credit_type_id'];
-        $softParams['contact_id'] = $this->_contactID;
-      }
-    }
-
-    $pendingMembershipStatusId = CRM_Core_PseudoConstant::getKey('CRM_Member_BAO_Membership', 'status_id', 'Pending');
-
-    if (!empty($formValues['record_contribution'])) {
-      $recordContribution = [
-        'total_amount',
-        'payment_instrument_id',
-        'trxn_id',
-        'contribution_status_id',
-        'check_number',
-        'receive_date',
-        'card_type_id',
-        'pan_truncation',
-      ];
-
-      foreach ($recordContribution as $f) {
-        $params[$f] = $formValues[$f] ?? NULL;
-      }
-      $params['financial_type_id'] = $this->getFinancialTypeID();
-      $params['campaign_id'] = $this->getSubmittedValue('campaign_id');
-
-      $params['contribution_source'] = $this->getContributionSource();
-
-      $completedContributionStatusId = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
-      if (($params['contribution_status_id'] ?? NULL) != $completedContributionStatusId) {
-        if (empty($params['is_override'])) {
-          $params['status_id'] = $pendingMembershipStatusId;
-          $params['skipStatusCal'] = TRUE;
-        }
-        $params['is_pay_later'] = 1;
-        $this->assign('is_pay_later', 1);
-      }
-
-      if ($this->getSubmittedValue('send_receipt')) {
-        $params['receipt_date'] = $formValues['receive_date'] ?? NULL;
-      }
-
-    }
-
-    // process line items, until no previous line items.
-    if (!empty($lineItem)) {
-      $params['lineItems'] = $lineItem;
-      $params['processPriceSet'] = TRUE;
-    }
-
-    if ($this->_mode) {
-      $params['total_amount'] = $this->order->getTotalAmount();
-      $params['financial_type_id'] = $this->getFinancialTypeID();
-
-      //get the payment processor id as per mode. Try removing in favour of beginPostProcess.
-      $params['payment_processor_id'] = $formValues['payment_processor_id'] = $this->getPaymentProcessorID();
-      $params['register_date'] = CRM_Utils_Time::date('YmdHis');
-
-      // add all the additional payment params we need
-      $formValues['amount'] = $this->order->getTotalAmount();
-      $formValues['currencyID'] = $this->getCurrency();
-      $formValues['description'] = ts("Contribution submitted by a staff person using member's credit card for signup");
-      $formValues['invoiceID'] = $this->getInvoiceID();
-      $formValues['financial_type_id'] = $this->getFinancialTypeID();
-
-      // at this point we've created a contact and stored its address etc
-      // all the payment processors expect the name and address to be in the
-      // so we copy stuff over to first_name etc.
-      // @todo formValues might not need to be merged in.
-      $paymentParams = $this->prepareParamsForPaymentProcessor($this->getSubmittedValues()) + $formValues;
-      $paymentParams['frequency_unit'] = $this->getFrequencyUnit();
-      $paymentParams['frequency_interval'] = $this->getFrequencyInterval();
-
-      $paymentParams['contactID'] = $this->_contributorContactID;
-      //CRM-10377 if payment is by an alternate contact then we need to set that person
-      // as the contact in the payment params
-      if ($this->_contributorContactID != $this->_contactID) {
-        if (!empty($formValues['soft_credit_type_id'])) {
-          $softParams['contact_id'] = $params['contact_id'];
-          $softParams['soft_credit_type_id'] = $formValues['soft_credit_type_id'];
-        }
-      }
-      if ($this->getSubmittedValue('send_receipt')) {
-        $paymentParams['email'] = $this->_contributorEmail;
-      }
-
-      // This is a candidate for shared beginPostProcess function.
-      // @todo Do we need this now we have $this->formatParamsForPaymentProcessor() ?
-      CRM_Core_Payment_Form::mapParams(NULL, $formValues, $paymentParams, TRUE);
-      // CRM-7137 -for recurring membership,
-      // we do need contribution and recurring records.
-      $result = NULL;
-
-      $this->_params = $formValues;
-      $contributionAddressID = CRM_Contribute_BAO_Contribution::createAddress($this->getSubmittedValues());
-      $contribution = civicrm_api3('Order', 'create',
-        [
-          'contact_id' => $this->_contributorContactID,
-          'address_id' => $contributionAddressID,
-          'line_items' => $this->getLineItemForOrderApi(),
-          'is_test' => $this->isTest(),
-          'campaign_id' => $this->getSubmittedValue('campaign_id'),
-          'source' => $paymentParams['source'] ?? $paymentParams['description'] ?? NULL,
-          'payment_instrument_id' => $this->getPaymentInstrumentID(),
-          'financial_type_id' => $this->getFinancialTypeID(),
-          'receive_date' => $this->getReceiveDate(),
-          'tax_amount' => $this->order->getTotalTaxAmount(),
-          'total_amount' => $this->order->getTotalAmount(),
-          'invoice_id' => $this->getInvoiceID(),
-          'currency' => $this->getCurrency(),
-          'receipt_date' => $this->getSubmittedValue('send_receipt') ? date('YmdHis') : NULL,
-          'contribution_recur_id' => $this->getContributionRecurID(),
-          'skipCleanMoney' => TRUE,
-        ]
-      );
-      $this->ids['Contribution'] = $contribution['id'];
-      $this->setMembershipIDsFromOrder($contribution);
-
-      //create new soft-credit record, CRM-13981
-      if ($softParams) {
-        $softParams['contribution_id'] = $contribution['id'];
-        $softParams['currency'] = $this->getCurrency();
-        $softParams['amount'] = $this->order->getTotalAmount();
-        CRM_Contribute_BAO_ContributionSoft::add($softParams);
-      }
-
-      $paymentParams['contactID'] = $this->_contactID;
-      $paymentParams['contributionID'] = $contribution['id'];
-
-      $paymentParams['contributionRecurID'] = $this->getContributionRecurID();
-      $paymentParams['is_recur'] = $this->isCreateRecurringContribution();
-      $params['contribution_id'] = $paymentParams['contributionID'];
-      $params['contribution_recur_id'] = $this->getContributionRecurID();
-
-      $paymentStatus = NULL;
+    if ($hasContribution) {
+      $contribution = $this->saveOrder();
 
       if ($this->order->getTotalAmount() > 0.0) {
-        $payment = $this->_paymentProcessor['object'];
-        $payment->setBackOffice(TRUE);
         try {
-          $result = $payment->doPayment($paymentParams);
-          $formValues = array_merge($formValues, $result);
-          $paymentStatus = CRM_Core_PseudoConstant::getName('CRM_Contribute_BAO_Contribution', 'contribution_status_id', $formValues['payment_status_id']);
-          if (!empty($params['contribution_id']) && $paymentStatus === 'Completed') {
-            civicrm_api3('Payment', 'create', [
-              'fee_amount' => $result['fee_amount'] ?? 0,
-              'total_amount' => $this->order->getTotalAmount(),
-              'payment_instrument_id' => $this->getPaymentInstrumentID(),
-              'trxn_id' => $result['trxn_id'],
-              'contribution_id' => $params['contribution_id'],
-              'is_send_contribution_notification' => FALSE,
-              'card_type_id' => $this->getCardTypeID(),
-              'pan_truncation' => $this->getPanTruncation(),
-            ]);
+          if ($this->_mode) {
+            $result = $this->submitPayment($contribution['id']);
+          }
+          $paymentStatus = CRM_Core_PseudoConstant::getName('CRM_Contribute_BAO_Contribution', 'contribution_status_id', $result['payment_status_id'] ?? $this->getSubmittedValue('contribution_status_id'));
+          if ($this->getContributionID() && $paymentStatus === 'Completed') {
+            $this->addPayment($result ?? []);
+          }
+          if (in_array($paymentStatus, ['Failed', 'Cancelled'])) {
+            Contribution::update(FALSE)
+              ->setValues(['contribution_status_id:name' => $paymentStatus])
+              ->addWhere('id', '=', $this->getContributionID())
+              ->execute();
           }
         }
-        catch (\Civi\Payment\Exception\PaymentProcessorException $e) {
-          if (!empty($paymentParams['contributionID'])) {
-            CRM_Contribute_BAO_Contribution::failPayment($paymentParams['contributionID'], $this->_contactID,
+        catch (PaymentProcessorException $e) {
+          if ($this->getContributionID()) {
+            CRM_Contribute_BAO_Contribution::failPayment($this->getContributionID(), $this->_contactID,
               $e->getMessage());
           }
           if ($this->getContributionRecurID()) {
@@ -1185,119 +1113,18 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
 
         }
       }
-
-      if ($paymentStatus !== 'Completed') {
-        $params['status_id'] = $pendingMembershipStatusId;
-        $params['skipStatusCal'] = TRUE;
-        // as membership is pending set dates to null.
-        foreach ($selectedMemberships as $memType) {
-          $membershipTypeValues[$memType]['joinDate'] = NULL;
-          $membershipTypeValues[$memType]['startDate'] = NULL;
-          $membershipTypeValues[$memType]['endDate'] = NULL;
-        }
-      }
-      $now = CRM_Utils_Time::date('YmdHis');
-      $params['receive_date'] = CRM_Utils_Time::date('Y-m-d H:i:s');
-      $params['invoice_id'] = $this->getInvoiceID();
-      $params['contribution_source'] = $this->getContributionSource();
-      $params['source'] = $formValues['source'] ?: $params['contribution_source'];
-      $params['trxn_id'] = $result['trxn_id'] ?? NULL;
-      $params['is_test'] = $this->isTest();
-      $params['receipt_date'] = NULL;
-      if ($this->getSubmittedValue('send_receipt') && $paymentStatus === 'Completed') {
-        // @todo this should be updated by the send function once sent rather than
-        // set here.
-        $params['receipt_date'] = $now;
-      }
-
-      $this->set('params', $formValues);
-      $this->assign('trxn_id', $result['trxn_id'] ?? NULL);
-
-      // required for creating membership for related contacts
-      $params['action'] = $this->_action;
-
-      // create membership record
-      foreach ($selectedMemberships as $memType) {
-        $membershipParams = array_merge($membershipTypeValues[$memType], $params);
-        if (isset($result['fee_amount'])) {
-          $membershipParams['fee_amount'] = $result['fee_amount'];
-        }
-        // This is required to trigger the recording of the membership contribution in the
-        // CRM_Member_BAO_Membership::Create function.
-        // @todo stop setting this & 'teach' the create function to respond to something
-        // appropriate as part of our 2-step always create the pending contribution & then finally add the payment
-        // process -
-        // @see http://wiki.civicrm.org/confluence/pages/viewpage.action?pageId=261062657#Payments&AccountsRoadmap-Movetowardsalwaysusinga2-steppaymentprocess
-        $membershipParams['contribution_status_id'] = $result['payment_status_id'] ?? NULL;
-        // The earlier process created the line items (although we want to get rid of the earlier one in favour
-        // of a single path!
-        unset($membershipParams['lineItems']);
-        $membershipParams['payment_instrument_id'] = $this->getPaymentInstrumentID();
-        $params['contribution'] = $membershipParams['contribution'] ?? NULL;
-        unset($params['lineItems']);
-      }
-
     }
     else {
-      $params['action'] = $this->_action;
-
-      foreach ($lineItem[$this->_priceSetId] as $id => $lineItemValues) {
-        if (empty($lineItemValues['membership_type_id'])) {
-          continue;
-        }
-
-        // @todo figure out why receive_date isn't being set right here.
-        if (empty($params['receive_date'])) {
-          $params['receive_date'] = CRM_Utils_Time::date('Y-m-d H:i:s');
-        }
-        $membershipParams = array_merge($params, $membershipTypeValues[$lineItemValues['membership_type_id']]);
-
-        // If is_override is empty then status_id="" (because it's a hidden field). That will trigger a recalculation in CRM_Member_BAO_Membership::create
-        //   unless is_override = TRUE or skipStatusCal = TRUE. But skipStatusCal also skips date calculations.
-        // If we are recording a contribution we *do* want to trigger a recalculation of membership status so it can go from Pending->New/Current
-        // So here we check if status_id is empty, default (ie. status in database) is pending and that we are not recording a contribution -
-        //   If all those are true then we skip the status calculation and explicitly set the pending status (to avoid a DB constraint status_id=0).
-        // Test cover in `CRM_Member_Form_MembershipTest::testOverrideSubmit()`.
-        $isPaymentPending = FALSE;
-        if ($this->getMembershipID()) {
-          $contributionId = CRM_Member_BAO_MembershipPayment::getLatestContributionIDFromLineitemAndFallbackToMembershipPayment($this->getMembershipID());
-          if ($contributionId) {
-            $isPaymentPending = \Civi\Api4\Contribution::get(FALSE)
-              ->addSelect('contribution_status_id:name')
-              ->addWhere('id', '=', $contributionId)
-              ->execute()
-              ->first()['contribution_status_id:name'] === 'Pending';
-          }
-        }
-        if (empty($membershipParams['status_id'])
-          && !empty($this->_defaultValues['status_id'])
-          && !$this->getSubmittedValue('record_contribution')
-          && (int) $this->_defaultValues['status_id'] === $pendingMembershipStatusId
-          && $isPaymentPending
-        ) {
-          $membershipParams['status_id'] = $this->_defaultValues['status_id'];
-        }
-
-        if (!empty($softParams)) {
-          $params['soft_credit'] = $softParams;
-        }
-        unset($membershipParams['contribution_status_id']);
-        $membershipParams['skipLineItem'] = TRUE;
-        unset($membershipParams['lineItems']);
-        $this->setMembership((array) CRM_Member_BAO_Membership::create($membershipParams));
-        $lineItem[$this->_priceSetId][$id]['entity_id'] = $this->membership['id'];
-        $lineItem[$this->_priceSetId][$id]['entity_table'] = 'civicrm_membership';
-
-      }
-      $params['lineItems'] = $lineItem;
-      if (!empty($formValues['record_contribution'])) {
-        $params['contribution_id'] = $this->recordMembershipContribution($params)->id;
+      foreach ($this->getOrder()->getMembershipLineItems() as $id => $lineItemValues) {
+        $this->setMembership(Membership::save(FALSE)
+          ->addRecord($this->getMembershipParamsForType((int) $lineItemValues['membership_type_id']))
+          ->execute()->single());
       }
     }
 
     // if selected membership doesn't match with earlier membership
-    if ($originalMembershipType && !in_array($originalMembershipType, $selectedMemberships)) {
-      $this->updateContributionOnMembershipTypeChange($params);
+    if ($originalMembershipType && !in_array($originalMembershipType, array_keys($this->getOrder()->getMembershipTypes()))) {
+      $this->updateContributionOnMembershipTypeChange();
     }
 
     if (($this->_action & CRM_Core_Action::UPDATE)) {
@@ -1307,38 +1134,16 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
       $this->addStatusMessage($this->getStatusMessageForCreate());
     }
 
-    // This would always be true as we always add price set id into both
-    // quick config & non quick config price sets.
-    if (!empty($lineItem[$this->_priceSetId])) {
-      foreach ($lineItem[$this->_priceSetId] as & $priceFieldOp) {
-        if (!empty($priceFieldOp['membership_type_id'])) {
-          $priceFieldOp['start_date'] = $membershipTypeValues[$priceFieldOp['membership_type_id']]['start_date'] ? CRM_Utils_Date::formatDateOnlyLong($membershipTypeValues[$priceFieldOp['membership_type_id']]['start_date']) : '-';
-          $priceFieldOp['end_date'] = $membershipTypeValues[$priceFieldOp['membership_type_id']]['end_date'] ? CRM_Utils_Date::formatDateOnlyLong($membershipTypeValues[$priceFieldOp['membership_type_id']]['end_date']) : '-';
-        }
-        else {
-          $priceFieldOp['start_date'] = $priceFieldOp['end_date'] = 'N/A';
-        }
-      }
-    }
-    $this->assign('lineItem', !empty($lineItem) && !$isQuickConfig ? $lineItem : FALSE);
-
-    $contributionId = $this->ids['Contribution'] ?? CRM_Member_BAO_MembershipPayment::getLatestContributionIDFromLineitemAndFallbackToMembershipPayment($this->getMembershipID());
+    $this->ids['Contribution'] ??= CRM_Member_BAO_MembershipPayment::getLatestContributionIDFromLineitemAndFallbackToMembershipPayment($this->getMembershipID());
     $membershipIds = $this->_membershipIDs;
-    if ($this->getSubmittedValue('send_receipt') && $contributionId && !empty($membershipIds)) {
-      $contributionStatus = \Civi\Api4\Contribution::get(FALSE)
+    if ($this->getSubmittedValue('send_receipt') && $this->ids['Contribution'] && !empty($membershipIds)) {
+      $contributionStatus = Contribution::get(FALSE)
         ->addSelect('contribution_status_id:name')
-        ->addWhere('id', '=', $contributionId)
+        ->addWhere('id', '=', $this->ids['Contribution'])
         ->execute()
         ->first();
       if ($contributionStatus['contribution_status_id:name'] === 'Completed') {
-        $formValues['contact_id'] = $this->_contactID;
-        $formValues['contribution_id'] = $contributionId;
-        // receipt_text_signup is no longer used in receipts from 5.47
-        // but may linger in some sites that have not updated their
-        // templates.
-        $formValues['receipt_text_signup'] = $this->getSubmittedValue('receipt_text');
-        // send email receipt
-        $this->emailMembershipReceipt($formValues);
+        $this->emailMembershipReceipt();
         $this->addStatusMessage(ts('A membership confirmation and receipt has been sent to %1.', [1 => $this->_contributorEmail]));
       }
     }
@@ -1353,111 +1158,19 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   }
 
   /**
-   * Record contribution record associated with membership.
-   * This will update an existing contribution if $params['contribution_id'] is passed in.
-   * This will create a MembershipPayment to link the contribution and membership
-   *
-   * @param array $params
-   *   Array of submitted params.
-   *
-   * @deprecated use Order api
-   *
-   * @return CRM_Contribute_BAO_Contribution
-   * @throws \CRM_Core_Exception
-   */
-  private function recordMembershipContribution($params) {
-    $contributionParams = [];
-    $config = CRM_Core_Config::singleton();
-    $contributionParams['currency'] = $config->defaultCurrency;
-    $contributionParams['receipt_date'] = !empty($params['receipt_date']) ? $params['receipt_date'] : 'null';
-    $contributionParams['source'] = $params['contribution_source'] ?? NULL;
-    $contributionParams['non_deductible_amount'] = 'null';
-    $contributionParams['skipCleanMoney'] = TRUE;
-    $contributionParams['revenue_recognition_date'] = $this->getDeferredRevenueRecognitionDate();
-    $contributionParams['payment_processor'] = $params['payment_processor_id'] ?? NULL;
-    $contributionSoftParams = $params['soft_credit'] ?? NULL;
-    $recordContribution = [
-      'contact_id',
-      'fee_amount',
-      'total_amount',
-      'receive_date',
-      'financial_type_id',
-      'payment_instrument_id',
-      'trxn_id',
-      'invoice_id',
-      'is_test',
-      'contribution_status_id',
-      'check_number',
-      'campaign_id',
-      'is_pay_later',
-      'membership_id',
-      'tax_amount',
-      'skipLineItem',
-      'contribution_recur_id',
-      'pan_truncation',
-      'card_type_id',
-    ];
-    foreach ($recordContribution as $f) {
-      $contributionParams[$f] = $params[$f] ?? NULL;
-    }
-
-    if (!empty($params['contribution_id'])) {
-      $contributionParams['id'] = $params['contribution_id'];
-    }
-    // make entry in batch entity batch table
-    if (!empty($params['batch_id'])) {
-      $contributionParams['batch_id'] = $params['batch_id'];
-    }
-
-    if (!empty($params['contribution_contact_id'])) {
-      // deal with possibility of a different person paying for contribution
-      $contributionParams['contact_id'] = $params['contribution_contact_id'];
-    }
-
-    if (!empty($params['processPriceSet']) &&
-      !empty($params['lineItems'])
-    ) {
-      $contributionParams['line_item'] = $params['lineItems'] ?? NULL;
-    }
-
-    $contribution = CRM_Contribute_BAO_Contribution::create($contributionParams);
-
-    //CRM-13981, create new soft-credit record as to record payment from different person for this membership
-    if (!empty($contributionSoftParams)) {
-      if (!empty($params['batch_id'])) {
-        foreach ($contributionSoftParams as $contributionSoft) {
-          $contributionSoft['contribution_id'] = $contribution->id;
-          $contributionSoft['currency'] = $contribution->currency;
-          CRM_Contribute_BAO_ContributionSoft::add($contributionSoft);
-        }
-      }
-      else {
-        $contributionSoftParams['contribution_id'] = $contribution->id;
-        $contributionSoftParams['currency'] = $contribution->currency;
-        $contributionSoftParams['amount'] = $contribution->total_amount;
-        CRM_Contribute_BAO_ContributionSoft::add($contributionSoftParams);
-      }
-    }
-
-    return $contribution;
-  }
-
-  /**
    * Update related contribution of a membership if update_contribution_on_membership_type_change
    *   contribution setting is enabled and type is changed on edit
    *
-   * @param array $inputParams
-   *      submitted form values
-   *
    * @throws \CRM_Core_Exception
    */
-  protected function updateContributionOnMembershipTypeChange(array $inputParams): void {
+  protected function updateContributionOnMembershipTypeChange(): void {
     if (Civi::settings()->get('update_contribution_on_membership_type_change') &&
       // Note these next 2 tests are pretty much redundant as we only reach this clause it there
       // was a pre-existing membership that has had a type status change.
       ($this->getAction() & CRM_Core_Action::UPDATE) &&
       $this->getMembershipID()
     ) {
+      $inputParams = $this->getSubmittedValues();
       if ($this->isCreateRecurringContribution()) {
         CRM_Core_Session::setStatus(ts('Associated recurring contribution cannot be updated on membership type change.'), ts('Error'), 'error');
         return;
@@ -1563,9 +1276,7 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
         // Already cancelled - nothing to preserve.
         continue;
       }
-      if (!isset($submittedLineItems[$lineItem['price_field_value_id']])) {
-        $submittedLineItems[$lineItem['price_field_value_id']] = $lineItem;
-      }
+      $submittedLineItems[] = $lineItem;
     }
   }
 
@@ -1652,8 +1363,16 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   protected function setStatusMessage() {
     //CRM-15187
     // display message when membership type is changed
-    if (($this->_action & CRM_Core_Action::UPDATE) && $this->getMembershipID() && !in_array($this->getMembershipValue('membership_type_id'), $this->_memTypeSelected)) {
-      $lineItems = CRM_Price_BAO_LineItem::getLineItems($this->getMembershipID(), 'membership');
+    $typeIDs = [];
+    foreach ($this->getOrder()->getMembershipTypes() as $membershipType) {
+      $typeIDs[] = $membershipType['id'];
+    }
+    if (($this->_action & CRM_Core_Action::UPDATE) && $this->getMembershipID() && !in_array($this->getMembershipValue('membership_type_id'), $typeIDs)) {
+      $lineItems = (array) LineItem::get(FALSE)
+        ->addWhere('entity_id', '=', $this->getMembershipID())
+        ->addWhere('entity_table', '=', 'civicrm_membership')
+        ->execute()->indexBy('id');
+
       if (empty($lineItems)) {
         return;
       }
@@ -1695,14 +1414,10 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   /**
    * Send a receipt for the membership.
    *
-   * @param array $formValues
-   *
    * @return bool
    * @throws \CRM_Core_Exception
    */
-  protected function emailMembershipReceipt($formValues) {
-    $customValues = $this->getCustomValuesForReceipt();
-    $this->assign('customValues', $customValues);
+  protected function emailMembershipReceipt() {
     $this->assign('total_amount', $this->order->getTotalAmount());
 
     if ($this->_mode) {
@@ -1714,53 +1429,8 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
       $this->assign('is_pay_later', 0);
       $this->assign('isPrimary', 1);
     }
-    $this->emailReceipt($formValues);
+    $this->emailReceipt();
     return TRUE;
-  }
-
-  /**
-   * Filter the custom values from the input parameters (for display in the email).
-   *
-   * @todo move this to the WorkFlowMessageTrait.
-   *
-   * @return array
-   */
-  protected function getCustomValuesForReceipt(): array {
-    $customFieldValues = $this->getCustomFieldValues();
-    $customValues = [];
-    foreach ($customFieldValues as $customFieldString => $submittedValue) {
-      if ($submittedValue === NULL) {
-        // This would occur when the field is no longer appropriate - ie changing
-        // from a membership type with the field to one without it.
-        continue;
-      }
-      $customFieldID = (int) CRM_Core_BAO_CustomField::getKeyID($customFieldString);
-      $value = CRM_Core_BAO_CustomField::displayValue($this->getSubmittedValue($customFieldString), $customFieldID);
-      $customValues[CRM_Core_BAO_CustomField::getField($customFieldID)['label']] = $value;
-    }
-    return $customValues;
-  }
-
-  /**
-   * Get the custom fields tat are on the form with the submitted values.
-   *
-   * @internal I think it would be good to make this field
-   * available as an api supported method - maybe on the form custom data trait
-   * but I feel like we might want to talk about the format of the returned results
-   * (key-value vs array, custom field ID keys vs custom_, filters/ multiple functions
-   * with different formatting) so keeping private for now.
-   *
-   * @return array
-   */
-  private function getCustomFieldValues(): array {
-    $customFields = [];
-    foreach ($this->_elements as $element) {
-      $customFieldID = CRM_Core_BAO_CustomField::getKeyID($element->getName());
-      if ($customFieldID) {
-        $customFields[$element->getName()] = $this->getSubmittedValue($element->getName());
-      }
-    }
-    return $customFields;
   }
 
   /**
@@ -1770,8 +1440,8 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    */
   protected function getSelectedMembershipLabels(): string {
     $return = [];
-    foreach ($this->_memTypeSelected as $membershipTypeID) {
-      $return[] = $this->allMembershipTypeDetails[$membershipTypeID]['name'];
+    foreach ($this->getOrder()->getMembershipTypes() as $membershipType) {
+      $return[] = $this->allMembershipTypeDetails[$membershipType['id']]['name'];
     }
     return implode(', ', $return);
   }
@@ -1788,6 +1458,9 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    */
   protected function getContributionRecurID():?int {
     if (!array_key_exists('ContributionRecur', $this->ids)) {
+      if (!$this->_mode) {
+        return $this->getMembershipValue('contribution_recur_id');
+      }
       $this->createRecurringContribution();
     }
     return $this->ids['ContributionRecur'];
@@ -1826,19 +1499,6 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
     $recurParams['trxn_id'] = $this->getInvoiceID();
     $recurParams['campaign_id'] = $this->getSubmittedValue('campaign_id');
     $this->ids['ContributionRecur'] = ContributionRecur::create(FALSE)->setValues($recurParams)->execute()->first()['id'];
-  }
-
-  /**
-   * Get the financial type id relevant to the contribution.
-   *
-   * Financial type id is optional when price sets are in use.
-   *
-   * Otherwise they are required for the form to submit.
-   *
-   * @return int
-   */
-  protected function getFinancialTypeID(): int {
-    return (int) $this->getSubmittedValue('financial_type_id') ?: $this->order->getFinancialTypeID();
   }
 
   /**
@@ -1891,25 +1551,21 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    * @throws \CRM_Core_Exception
    */
   protected function getFormMembershipParams(): array {
-    $params = [
-      'status_id' => $this->getSubmittedValue('status_id'),
-      'source' => $this->getSubmittedValue('source') ?? $this->getContributionSource(),
+    return [
+      'id' => $this->_id ?: NULL,
+      'status_id' => $this->getPendingContributionMembershipStatus() ?: ($this->getUnpaidMembershipStatus() ?: $this->getSubmittedValue('status_id')),
+      'skipStatusCal' => (bool) $this->getPendingContributionMembershipStatus(),
+      'source' => $this->getSource(),
       'contact_id' => $this->getMembershipContactID(),
       'is_override' => $this->getSubmittedValue('is_override'),
       'status_override_end_date' => $this->getSubmittedValue('status_override_end_date'),
       'campaign_id' => $this->getSubmittedValue('campaign_id'),
-      'custom' => CRM_Core_BAO_CustomField::postProcess($this->getSubmittedValues(),
-        $this->_id,
-        'Membership'
-      ),
       // fix for CRM-3724
       // when is_override false ignore is_admin statuses during membership
       // status calculation. similarly we did fix for import in CRM-3570.
       'exclude_is_admin' => !$this->getSubmittedValue('is_override'),
       'contribution_recur_id' => $this->getContributionRecurID(),
     ];
-    $params += $this->getSubmittedCustomFields(4);
-    return $params;
   }
 
   /**
@@ -1919,15 +1575,6 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    */
   protected function isCreateRecurringContribution(): bool {
     return $this->_mode && $this->getSubmittedValue('auto_renew');
-  }
-
-  /**
-   * Get the payment processor ID.
-   *
-   * @return int
-   */
-  public function getPaymentProcessorID(): int {
-    return (int) ($this->getSubmittedValue('payment_processor_id') ?: $this->_paymentProcessor['id']);
   }
 
   /**
@@ -1948,12 +1595,12 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    */
   protected function getMembershipParameters(): array {
     $membershipTypeValues = [];
-    foreach ($this->_memTypeSelected as $memType) {
-      $membershipTypeValues[$memType]['membership_type_id'] = $memType;
+    foreach ($this->getOrder()->getMembershipTypes() as $membershipType) {
+      $membershipTypeValues[$membershipType['id']]['membership_type_id'] = $membershipType['id'];
       if (is_numeric($this->getSubmittedValue('max_related'))) {
         // The BAO will set from the membership type is not passed in but we should
         // not set this if we don't need to to let the BAO do it's thing.
-        $membershipTypeValues[$memType]['max_related'] = $this->getSubmittedValue('max_related');
+        $membershipTypeValues[$membershipType['id']]['max_related'] = $this->getSubmittedValue('max_related');
       }
     }
     // Really we don't need to do all this unless one of the join dates
@@ -1986,11 +1633,14 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   }
 
   /**
-   * Get the value for the contribution source.
+   * Get the source to record against the membership and contribution.
    *
    * @return string
    */
-  protected function getContributionSource(): string {
+  protected function getSource(): string {
+    if ($this->getSubmittedValue('source')) {
+      return $this->getSubmittedValue('source');
+    }
     [$userName] = CRM_Contact_BAO_Contact_Location::getEmailDetails(CRM_Core_Session::getLoggedInContactID());
     $userName = htmlentities((string) $userName);
     if ($this->_mode) {
@@ -1998,22 +1648,10 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
         [1 => $this->getSelectedMembershipLabels(), 2 => $userName]
       );
     }
-    if ($this->getSubmittedValue('source')) {
-      return $this->getSubmittedValue('source');
-    }
     return ts('%1 Membership: Offline signup (by %2)', [
       1 => $this->getSelectedMembershipLabels(),
       2 => $userName,
     ]);
-  }
-
-  /**
-   * Get the receive date for the contribution.
-   *
-   * @return string $receive_date
-   */
-  protected function getReceiveDate(): string {
-    return $this->getSubmittedValue('receive_date') ?: date('YmdHis');
   }
 
   /**
@@ -2073,14 +1711,12 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
   protected function getLineItemForOrderApi(): array {
     $lineItems = [];
     foreach ($this->order->getLineItems() as $line) {
-      $params = [];
       if (!empty($line['membership_type_id'])) {
-        $params = $this->getMembershipParamsForType((int) $line['membership_type_id']);
+        $membershipParams = $this->getMembershipParamsForType((int) $line['membership_type_id']);
+        $line = CRM_Utils_Array::prefixKeys($membershipParams, 'entity_id.') + $line;
+        $line['entity_table'] = 'civicrm_membership';
       }
-      $lineItems[] = [
-        'line_item' => [$line['price_field_value_id'] => $line],
-        'params' => $params,
-      ];
+      $lineItems[] = $line;
     }
     return $lineItems;
   }
@@ -2094,20 +1730,21 @@ class CRM_Member_Form_Membership extends CRM_Member_Form {
    * @throws \CRM_Core_Exception
    */
   protected function getMembershipParamsForType(int $membershipTypeID) {
-    return array_merge($this->getFormMembershipParams(), $this->getMembershipParameters()[$membershipTypeID]);
+    // Custom field values are passed in apiv4 format here since this feeds
+    // the Order api's entity_id.* line item params.
+    return array_merge($this->getFormMembershipParams(), $this->getSubmittedCustomFields(4), $this->getMembershipParameters()[$membershipTypeID]);
   }
 
   /**
    * @param array $contribution
    */
   protected function setMembershipIDsFromOrder(array $contribution): void {
-    $ids = [];
-    foreach ($contribution['values'][$contribution['id']]['line_item'] as $line) {
-      if ($line['entity_table'] ?? '' === 'civicrm_membership') {
-        $ids[] = (int) $line['entity_id'];
-      }
-    }
-    $this->setMembershipIDs($ids);
+    $ids = (array) LineItem::get(FALSE)
+      ->addSelect('entity_id')
+      ->addWhere('contribution_id', '=', $contribution['id'])
+      ->addWhere('entity_table', '=', 'civicrm_membership')
+      ->execute()->column('entity_id');
+    $this->setMembershipIDs(array_map('intval', $ids));
   }
 
 }

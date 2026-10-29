@@ -480,7 +480,7 @@ class CRM_Contact_Import_Parser_Contact extends CRM_Import_Parser {
    */
   private function getSuccessMessage(): string {
     if (!empty($this->_unparsedStreetAddressContacts)) {
-      $errorMessage = ts('Record imported successfully but unable to parse the street address: ');
+      $errorMessage = ts('Record imported successfully but unable to parse the street address:');
       foreach ($this->_unparsedStreetAddressContacts as $contactValue) {
         $contactUrl = CRM_Utils_System::url('civicrm/contact/add', 'reset=1&action=update&cid=' . $contactValue['id'], TRUE, NULL, FALSE);
         $errorMessage .= "\n Contact ID:" . $contactValue['id'] . " <a href=\"$contactUrl\"> " . $contactValue['streetAddress'] . '</a>';
@@ -1045,7 +1045,7 @@ class CRM_Contact_Import_Parser_Contact extends CRM_Import_Parser {
    * @throws \Civi\API\Exception\UnauthorizedException
    */
   protected function lookupContactID(array $params, bool $isMainContact): ?int {
-    $contactID = !empty($params['id']) ? (int) $params['id'] : NULL;
+    $contactID = !empty($params['id']) ? $this->getMergedToContactIfDeleted((int) $params['id']) : NULL;
     $extIDMatch = $this->lookupExternalIdentifier($params['external_identifier'] ?? NULL, $params['contact_type'], $contactID);
     if ($extIDMatch && $isMainContact && ($this->isSkipDuplicates() || $this->isIgnoreDuplicates())) {
       throw new CRM_Core_Exception(ts('External ID already exists in Database.'), CRM_Import_Parser::DUPLICATE);

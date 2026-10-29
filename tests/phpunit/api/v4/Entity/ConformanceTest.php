@@ -43,24 +43,26 @@ class ConformanceTest extends Api4TestBase implements HookInterface {
   use CheckAccessTrait;
   use TableDropperTrait;
 
+  protected ?array $enableComponents = ['*'];
+
   /**
    * Set up baseline for testing
    *
    * @throws \CRM_Core_Exception
    */
   public function setUp(): void {
-    // Enable all components
-    \CRM_Core_BAO_ConfigSetting::enableAllComponents();
     parent::setUp();
     $this->resetCheckAccess();
   }
 
   public function setUpHeadless(): CiviEnvBuilder {
     // Install all core extensions that provide APIs
-    return Test::headless()->install([
+    $env = Test::headless()->install([
       'org.civicrm.search_kit',
       'civigrant',
     ])->apply();
+    $this->applyComponentSettings();
+    return $env;
   }
 
   /**
@@ -604,6 +606,14 @@ class ConformanceTest extends Api4TestBase implements HookInterface {
       $clause[] = [$key, '=', $val];
     }
     return $clause;
+  }
+
+  protected function getRequiredValuesToCreate(string $entity, array $values = []): array {
+    $values = parent::getRequiredValuesToCreate($entity, $values);
+    if (in_array($entity, ['Address', 'Email', 'Phone', 'IM'], TRUE) && empty($values['contact_id'])) {
+      $values['contact_id'] = $this->createTestRecord('Contact')['id'];
+    }
+    return $values;
   }
 
 }

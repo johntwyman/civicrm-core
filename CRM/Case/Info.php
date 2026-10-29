@@ -200,7 +200,7 @@ class CRM_Case_Info extends CRM_Core_Component_Info {
    */
   public static function onToggleComponents($oldValue, $newValue, $metadata) {
     if (
-      in_array('CiviCase', $newValue)
+      in_array('CiviCase', $newValue ?? $metadata['default'])
       &&
       (!$oldValue || !in_array('CiviCase', $oldValue))
     ) {
@@ -265,6 +265,17 @@ class CRM_Case_Info extends CRM_Core_Component_Info {
         }
       }
     }
+  }
+
+  /**
+   * Settings for the crmCaseType Angular module.
+   *
+   * @return array
+   */
+  public static function getCaseTypeAngularSettings(): array {
+    return [
+      'caseComponentId' => CRM_Core_Component::getComponentID('CiviCase'),
+    ];
   }
 
   /**

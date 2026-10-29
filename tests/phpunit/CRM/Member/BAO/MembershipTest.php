@@ -65,7 +65,7 @@ class CRM_Member_BAO_MembershipTest extends CiviUnitTestCase {
       'period_type' => 'rolling',
       'name' => 'Organization Membership Type' . ($withRelationship ? '1' : '0'),
       'title' => 'Organization Membership Type',
-      'relationship_type_id' => ($withRelationship) ? 5 : NULL,
+      'relationship_type_id' => ($withRelationship) ? $this->getRelationshipTypeID('Employee of') : NULL,
       'relationship_direction' => ($withRelationship) ? 'b_a' : NULL,
       'max_related' => $maxRelated ?: NULL,
     ], 'organization');
@@ -761,16 +761,17 @@ class CRM_Member_BAO_MembershipTest extends CiviUnitTestCase {
     $this->restoreMembershipTypes();
     $form = new CRM_Core_Form();
     $values = CRM_Member_BAO_Membership::buildMembershipTypeValues($form);
+    $generalTypeID = CRM_Core_PseudoConstant::getKey('CRM_Member_BAO_Membership', 'membership_type_id', 'General');
     $this->assertEquals([
-      'id' => 1,
+      'id' => $generalTypeID,
       'minimum_fee' => 100.00,
       'name' => 'General',
       'is_active' => TRUE,
       'description' => 'Regular annual membership.',
-      'financial_type_id' => 2,
+      'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
       'auto_renew' => 0,
-      'member_of_contact_id' => $values[1]['member_of_contact_id'],
-      'relationship_type_id' => [7],
+      'member_of_contact_id' => $values[$generalTypeID]['member_of_contact_id'],
+      'relationship_type_id' => [$this->getRelationshipTypeID('Head of Household for')],
       'relationship_direction' => ['b_a'],
       'max_related' => NULL,
       'duration_unit' => 'year',
@@ -787,7 +788,7 @@ class CRM_Member_BAO_MembershipTest extends CiviUnitTestCase {
       'receipt_text_renewal' => NULL,
       'title' => 'General',
       'frontend_title' => 'General',
-    ], $values[1]);
+    ], $values[$generalTypeID]);
   }
 
   /**
@@ -999,6 +1000,52 @@ class CRM_Member_BAO_MembershipTest extends CiviUnitTestCase {
       ->addWhere('owner_membership_id', '=', $membership['id'])
       ->execute()->single();
     $this->assertEquals($membership['id'], $relatedMembership['owner_membership_id']);
+  }
+
+  /**
+   * A status update must expire the inherited membership of every contact
+   * whose relationship has ended, not only the first one processed.
+   */
+  public function testStatusJobExpiresInheritedMembershipOfEveryPastRelationship(): void {
+    $employerID = $this->organizationCreate();
+    $currentEmployeeID = $this->individualCreate([], 'current');
+    $formerEmployeeIDs = [$this->individualCreate([], 'former1'), $this->individualCreate([], 'former2')];
+    $this->createTestEntity('Relationship', [
+      'relationship_type_id:name' => 'Employee of',
+      'contact_id_a' => $currentEmployeeID,
+      'contact_id_b' => $employerID,
+      'is_active' => 1,
+    ], 'current');
+    foreach ($formerEmployeeIDs as $formerEmployeeID) {
+      $this->createTestEntity('Relationship', [
+        'relationship_type_id:name' => 'Employee of',
+        'contact_id_a' => $formerEmployeeID,
+        'contact_id_b' => $employerID,
+        'end_date' => date('Y-m-d', strtotime('-1 year')),
+        'is_active' => 1,
+      ], 'former_' . $formerEmployeeID);
+    }
+
+    $membership = $this->createTestEntity('Membership', [
+      'membership_type_id' => $this->createMembershipType($this->organizationCreate(), TRUE)['id'],
+      'contact_id' => $employerID,
+      'join_date' => date('Y-m-d', strtotime('-6 months')),
+      'start_date' => date('Y-m-d', strtotime('-6 months')),
+      'end_date' => date('Y-m-d', strtotime('+6 months')),
+      'status_id:name' => 'New',
+      'skipStatusCal' => TRUE,
+    ], 'owner');
+
+    $this->callAPISuccess('Job', 'process_membership', []);
+
+    $inherited = Membership::get(FALSE)
+      ->addSelect('contact_id', 'status_id:name', 'status_id.is_current_member')
+      ->addWhere('owner_membership_id', '=', $membership['id'])
+      ->execute()->indexBy('contact_id');
+    $this->assertEquals('Current', $inherited[$currentEmployeeID]['status_id:name']);
+    foreach ($formerEmployeeIDs as $formerEmployeeID) {
+      $this->assertFalse($inherited[$formerEmployeeID]['status_id.is_current_member'], "Former employee $formerEmployeeID");
+    }
   }
 
   /**

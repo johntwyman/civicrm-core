@@ -100,12 +100,9 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     }
     $values = [
       'params' => [$participant->id => $participantParams],
-      'event' => $event_values,
-      'custom_pre_id' => $pre_id,
-      'custom_post_id' => $post_id,
       'payer' => $payer_values,
     ];
-    CRM_Event_BAO_Event::sendMail($participant->contact_id, $values, $participant->id);
+    CRM_Event_BAO_Event::sendMail(NULL, $values, $participant->id);
 
     return $participant;
   }
@@ -126,7 +123,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
       }
       else {
         if ($event_in_cart->event->payment_processor !== NULL && $event_in_cart->event->payment_processor !== $payment_processor_id) {
-          CRM_Core_Error::statusBounce(ts('When registering for multiple events all events must use the same payment processor. '));
+          CRM_Core_Error::statusBounce(ts('When registering for multiple events all events must use the same payment processor.'));
         }
       }
       if ($payment_processor_id) {

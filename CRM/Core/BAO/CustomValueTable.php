@@ -54,6 +54,11 @@ class CRM_Core_BAO_CustomValueTable {
           $where = " WHERE  id = %{$count}";
           $params[$count] = [$firstField['id'], 'Integer'];
           $count++;
+          if ($entityID) {
+            $where .= " AND entity_id = %{$count}";
+            $params[$count] = [$entityID, 'Integer'];
+            $count++;
+          }
           $hookOP = 'edit';
         }
         else {
@@ -619,14 +624,11 @@ class CRM_Core_BAO_CustomValueTable {
               break;
 
             case 'Timestamp':
-              $fieldValue['value'] = NULL;
-              break;
-
             case 'StateProvince':
             case 'Country':
             case 'Money':
             case 'Float':
-              $fieldValue['value'] = (int) 0;
+              $fieldValue['value'] = NULL;
               break;
           }
         }
@@ -748,7 +750,7 @@ class CRM_Core_BAO_CustomValueTable {
           }
         }
         else {
-          return CRM_Core_Error::createAPIError(ts('Invalid entity type') . ': "' . $type . '"');
+          return CRM_Core_Error::createAPIError(ts('Invalid entity type: "%1"', [1 => $type]));
         }
       }
     }

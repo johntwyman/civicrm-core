@@ -69,8 +69,6 @@
   --crm-btn-padding-inline: var(--crm-l-medium-2);
   --crm-btn-height: 1.825rem;
   --crm-btn-icon-spacing: var(--crm-l-xsmall-2);
-  --crm-btn-cancel-bg-color: var(--crm-c-red-light);
-  --crm-btn-cancel-text-color: var(--crm-c-red-dark);
   --crm-btn-info-bg-color: var(--crm-secondary-color);
   --crm-btn-info-text-color: var(--crm-secondary-text-color);
   --crm-btn-success-bg-color: var(--crm-info-color);
@@ -194,6 +192,7 @@
 /* Dashlet */
   --crm-dashlet-box-shadow: none;
   --crm-dashlet-header-bg-color: var(--crm-paper);
+  --crm-dashlet-header-padding: var(--crm-l-small);
   --crm-dashlet-tabs-bg-color: var(--crm-tabs-bg-color);
   --crm-dashlet-radius: var(--crm-r-3);
 }
@@ -204,6 +203,7 @@
   --crm-dropdown-hover-text-color: var(--crm-c-blue-dark);
   --crm-dropdown-hover-bg-color: var(--crm-c-blue-light);
   --crm-dropdown-width: 23ch;
+  --crm-dropdown-radius: 4px;
 }
 :root {
 /* Notifications */
@@ -426,50 +426,10 @@ html.cms-standalone body {
   display: none;
 }
 
-/* .modal-header .close { order: 3; } */
-/* .crm-container  .modal-header .ui-icon[class*=" fa-"] { font-size: 1rem; } */
-/* I don't know what problem this solved, but it creates an undesired left padding */
-/* #bootstrap-theme .modal-header::before, #bootstrap-theme .modal-header::after { */
-/*   display: none !important; */
-/* } */
-/**/
-/* #bootstrap-theme .modal-header { */
-/*   border:none; */
-/* } */
-/**/
-/* .crm-container button.close { */
-/*   color: var(--crm-c-blue-darker) !important; */
-/* } */
-
-/* DROPDOWNS */
-.crm-container .btn-group .dropdown-menu,
-.crm-container .btn.dropdown-toggle+.dropdown-menu {
-  border-radius: 4px;
-}
-
 /* FORMS */
 
 .crm-container .replace-plain {
   background: #fff;
-}
-
-
-/* NOTIFICATIONS (the popup ones) */
-/* This produces a nicer hanging-indent type thing aligning the title and message to the left. */
-.crm-container .notify-content {
-  padding-left: 1.6rem;
-}
-
-/* Thames theme does hanging indent for the little <i>con, but happy for the list bullets to be outside of main text block as is narrow column. */
-#crm-notification-container div.ui-notify-message .notify-content ul,
-#crm-notification-container div.ui-notify-message .alert.notify-content ul {
-  margin: 1rem 0 0;
-  padding: 0;
-}
-
-/* Only include the margin under the h1 (h1!) when it's not empty. When it's empty the h1 only contains the <i>con and adding a margin messes up vertical alignment of the message. */
-#crm-notification-container div.ui-notify-message h1:not(:empty) {
-  margin-bottom: 1rem;
 }
 
 /* OTHER */
@@ -591,7 +551,7 @@ div.crm-summary-contactname-block+.crm-actions-ribbon {
   flex-wrap: wrap;
 }
 
-/* */
+/* Contact summary tags block */
 #contact-summary .crm-tag-item {
   border-radius: var(--crm-r-1);
 }
@@ -682,12 +642,6 @@ nav.breadcrumb a {
   border-color: var(--crm-c-blue-dark) !important;
 }
 
-/* Overrides for crmSearchAdmin.css */
-.crm-search-nav-tabs > div.btn-group {
-  top: 0 !important; /* the buttons already have padding, we don't need this. (crmSearchAdmin.css, L10 at time of writing) */
-}
-
-
 /* Make the tags list nicer. */
 .crm-tag-item {
   padding: 0 1ch;
@@ -722,15 +676,6 @@ html.crm-standalone  nav.breadcrumb>ol {
 /* PHP errors, warnings */
 .standalone-errors {
   background: #ead2ce;
-}
-
-/* e.g. search buttons followed by count of matches on SK screen */
-.crm-search-display .form-inline:not(th,td) {
-  padding: var(--crm-padding-reg) 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--crm-l-medium);
 }
 
 /* Spinner. Replace the fa icon with something nicer. */
@@ -790,16 +735,6 @@ html.crm-standalone  nav.breadcrumb>ol {
   margin-left: 1rem;
   /* crmSearchAdmin applies this var as the bg here and it does not suit us. */
   --crm-page-bg-color: transparent;
-}
-
-/* Override contactSummary.css */
-#crm-contact-actions-list a.delete {
-  --crm-danger-text-color: var(--crm-c-red-dark);
-}
-#crm-contact-actions-list a.delete:hover,
-#crm-contact-actions-list a.delete:focus {
-  /* the hover state gives crm-c-red-dark to the background */
-  --crm-danger-text-color: var(--crm-c-red-light);
 }
 
 /* Fix Mosaico wizard */

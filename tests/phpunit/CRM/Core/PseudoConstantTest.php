@@ -83,7 +83,7 @@ class CRM_Core_PseudoConstantTest extends CiviUnitTestCase {
     $api_params = [
       'name' => $membership_type,
       'is_active' => TRUE,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'domain_id' => 1,
       'member_of_contact_id' => 1,
       'duration_unit' => 'day',
@@ -97,7 +97,7 @@ class CRM_Core_PseudoConstantTest extends CiviUnitTestCase {
     $api_params = [
       'title' => $contribution_page,
       'is_active' => TRUE,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $result = civicrm_api3('contribution_page', 'create', $api_params);
 
@@ -971,9 +971,9 @@ class CRM_Core_PseudoConstantTest extends CiviUnitTestCase {
       'Organization' => 'Organization',
     ];
     $byId = [
-      1 => 'Individual',
-      2 => 'Household',
-      3 => 'Organization',
+      $this->getContactTypeID('Individual') => 'Individual',
+      $this->getContactTypeID('Household') => 'Household',
+      $this->getContactTypeID('Organization') => 'Organization',
     ];
     // By default this should return an array keyed by name
     $result = CRM_Contact_DAO_Contact::buildOptions('contact_type');

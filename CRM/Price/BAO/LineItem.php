@@ -320,7 +320,7 @@ WHERE li.contribution_id = %1";
         'html_type' => $fields['html_type'],
         'financial_type_id' => $options[$oid]['financial_type_id'] ?? NULL,
         'tax_amount' => $options[$oid]['tax_amount'] ?? 0,
-        'non_deductible_amount' => $options[$oid]['non_deductible_amount'] ?? NULL,
+        'non_deductible_amount' => $qty * ($options[$oid]['non_deductible_amount'] ?? 0),
       ];
 
       if ($values[$oid]['membership_type_id'] && empty($values[$oid]['auto_renew'])) {
@@ -449,8 +449,11 @@ WHERE li.contribution_id = %1";
    *   Entity Table.
    *
    * @param bool $isRelatedID
+   *
+   * @deprecated
    */
   public static function getLineItemArray(&$params, $entityId = NULL, $entityTable = 'contribution', $isRelatedID = FALSE) {
+    CRM_Core_Error::deprecatedWarning('getLineItemArray is deprecated - no core caller remains');
     if (!$entityId) {
       $priceSetDetails = CRM_Price_BAO_PriceSet::getDefaultPriceSet($entityTable);
       $totalAmount = $params['total_amount'] ?? 0;
@@ -583,10 +586,6 @@ WHERE li.contribution_id = %1";
     array $submittedLineItems,
     int $contributionId
   ) {
-    $taxAmount = 0.0;
-    foreach ($submittedLineItems as $submittedLineItem) {
-      $taxAmount += $submittedLineItem['tax_amount'] ?? 0.0;
-    }
     $previousLineItems = (array) LineItem::get(FALSE)
       ->addWhere('contribution_id', '=', $contributionId)
       ->execute()->indexBy('id');
@@ -595,7 +594,7 @@ WHERE li.contribution_id = %1";
     $updatedContribution->id = $contributionId;
     $updatedContribution->find(TRUE);
     $financialProcessor = new CRM_Contribute_BAO_FinancialProcessor(NULL, $updatedContribution, $previousLineItems, $submittedLineItems);
-    $financialProcessor->changeFeeSelections($submittedLineItems, $contributionId, $taxAmount);
+    $financialProcessor->changeFeeSelections();
   }
 
   /**

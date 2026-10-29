@@ -72,13 +72,18 @@ class CRM_Price_Form_Set extends CRM_Core_Form {
    * Set variables up before form is built.
    */
   public function preProcess() {
+    $action = CRM_Utils_Request::retrieve('action', 'String', $this, FALSE);
+    if ($action) {
+      $this->_action = $action;
+    }
+
     // current set id
-    $this->_sid = $this->get('sid');
+    $this->_sid = CRM_Utils_Request::retrieve('sid', 'Positive', $this);
 
     // setting title for html page
     $title = ts('New Price Set');
     if ($this->getEntityId()) {
-      $title = CRM_Price_BAO_PriceSet::getTitle($this->getEntityId());
+      $title = CRM_Utils_API_HTMLInputCoder::singleton()->decodeValue(CRM_Price_BAO_PriceSet::getTitle($this->getEntityId()));
     }
     if ($this->_action & CRM_Core_Action::UPDATE) {
       $title = ts('Edit %1', [1 => $title]);
@@ -266,7 +271,7 @@ class CRM_Price_Form_Set extends CRM_Core_Form {
 
     $set = CRM_Price_BAO_PriceSet::create($params);
     if ($this->_action & CRM_Core_Action::UPDATE) {
-      CRM_Core_Session::setStatus(ts('The Set \'%1\' has been saved.', [1 => $set->title]), ts('Saved'), 'success');
+      CRM_Core_Session::setStatus(ts("The Set '%1' has been saved.", [1 => $set->title]), ts('Saved'), 'success');
     }
     else {
       // Jump directly to adding a field if popups are disabled

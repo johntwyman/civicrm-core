@@ -3,6 +3,7 @@
 use Civi\Api4\Contribution;
 use Civi\Api4\EntityFinancialTrxn;
 use Civi\Api4\FinancialItem;
+use Civi\Api4\FinancialTrxn;
 use Civi\Api4\LineItem;
 use Civi\Api4\Participant;
 use Civi\Api4\ParticipantStatusType;
@@ -115,7 +116,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       'currency' => 'USD',
       'receipt_date' => date('Y-m-d') . ' 00:00:00',
       'contact_id' => $this->ids['Contact']['individual_0'],
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'payment_instrument_id' => 4,
       'contribution_status_id' => 'Pending',
       'receive_date' => date('Y-m-d') . ' 00:00:00',
@@ -134,7 +135,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
           'event_id' => $this->getEventID(),
           'register_date' => date('Y-m-d') . ' 00:00:00',
           'role_id' => 1,
-          'status_id' => 1,
+          'status_id' => $this->getParticipantStatusID('Registered'),
           'source' => 'Event_' . $this->getEventID(),
           'contact_id' => $this->ids['Contact']['individual_0'],
         ],
@@ -157,9 +158,6 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testCRM19273(): void {
-    // When a line item is 'resurrected' the financial_items attached to it are wrong.
-    // We have to skip validatePayments until fixed.
-    $this->isValidateFinancialsOnPostAssert = FALSE;
     $this->registerParticipantAndPay();
 
     $this->submitForm($this->getCheapFeeID());
@@ -261,7 +259,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       ->setContributionValues([
         'contact_id' => $this->ids['Contact']['individual_0'],
         'currency' => 'USD',
-        'financial_type_id' => 4,
+        'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
         'payment_instrument_id' => 4,
         'contribution_status_id:name' => 'Pending',
         'source' => 'Test set with information',
@@ -271,7 +269,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
         'entity_table' => 'civicrm_participant',
         'entity_id.event_id' => $this->getEventID(),
         'entity_id.contact_id' => $this->ids['Contact']['individual_0'],
-        'entity_id.status_id' => 1,
+        'entity_id.status_id' => $this->getParticipantStatusID('Registered'),
         'entity_id.role_id' => 1,
         'entity_id.register_date' => date('Y-m-d') . ' 00:00:00',
         'entity_id.source' => 'Event_' . $this->getEventID(),
@@ -307,21 +305,21 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
         'amount' => 10.00,
         'status_id' => $unpaidStatus,
         'entity_table' => 'civicrm_line_item',
-        'entity_id' => 1,
+        'entity_id' => $lineItemIDs[0],
       ],
       [
         // when qty 3 is used, add the surplus amount i.e. $30 - $10 = $20
         'amount' => 20.00,
         'status_id' => $unpaidStatus,
         'entity_table' => 'civicrm_line_item',
-        'entity_id' => 1,
+        'entity_id' => $lineItemIDs[0],
       ],
       [
         // when qty 2 is used, add the surplus amount i.e. $20 - $30 = -$10
         'amount' => -10.00,
         'status_id' => $unpaidStatus,
         'entity_table' => 'civicrm_line_item',
-        'entity_id' => 1,
+        'entity_id' => $lineItemIDs[0],
       ],
     ];
     // Check if 3 financial items were recorded
@@ -341,8 +339,6 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testCRM17151(): void {
-    // @todo figure out the financial validation issue - likely a real bug.
-    $this->isValidateFinancialsOnPostAssert = FALSE;
     $this->registerParticipantAndPay();
     $this->validateContribution($this->_expensiveFee, 'Completed');
     $lineItem = $this->getParticipantLineItems();
@@ -356,13 +352,11 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->assertEquals($this->_cheapFee, $lineItem[0]['line_total']);
 
     $this->submitForm($this->getExpensiveValueID());
-    $this->validateContribution($this->_cheapFee, 'Completed');
+    $this->validateContribution($this->_expensiveFee, 'Completed');
     $lineItem = $this->getParticipantLineItems();
     $this->assertEquals($this->_expensiveFee, $lineItem[1]['line_total']);
     $this->assertEquals('0.00', $lineItem[0]['line_total']);
 
-    // @todo this doesn't seem to work right even tho it should
-    //$this->assertDBCompareValue('CRM_Contribute_BAO_Contribution', $this->ids['Contribution']['order'], 'total_amount', 'id', $this->_expensiveFee, "Total Amount equals " . $this->_expensiveFee);
     $this->submitForm($this->getVeryExpensiveID());
     $lineItem = $this->getParticipantLineItems();
     $this->assertEquals('0.00', $lineItem[1]['line_total']);
@@ -429,28 +423,27 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->registerParticipantAndPay($this->_expensiveFee);
     $this->submitForm($this->getVeryExpensiveID());
     $actualResults = $this->callAPISuccess('EntityFinancialTrxn', 'get', ['sequential' => 1, 'entity_table' => 'civicrm_financial_item'])['values'];
+    $financialItemIDs = FinancialItem::get(FALSE)->addOrderBy('id')->execute()->column('id');
+    $financialTrxnIDs = FinancialTrxn::get(FALSE)->addOrderBy('id')->execute()->column('id');
     $this->assertCount(3, $actualResults);
     $expectedResults = [
       [
-        'id' => 2,
         'amount' => 100.0,
-        'entity_id' => 1,
-        'financial_trxn_id' => 1,
+        'entity_id' => $financialItemIDs[0],
+        'financial_trxn_id' => $financialTrxnIDs[0],
         'entity_table' => 'civicrm_financial_item',
       ],
       [
-        'id' => 4,
         // ensure that reverse entry is entered in the EntityFinancialTrxn table on fee change to greater amount
         'amount' => -100.0,
-        'entity_id' => 2,
-        'financial_trxn_id' => 2,
+        'entity_id' => $financialItemIDs[1],
+        'financial_trxn_id' => $financialTrxnIDs[1],
         'entity_table' => 'civicrm_financial_item',
       ],
       [
-        'id' => 5,
         'amount' => 300.00,
-        'entity_id' => 3,
-        'financial_trxn_id' => 2,
+        'entity_id' => $financialItemIDs[2],
+        'financial_trxn_id' => $financialTrxnIDs[1],
         'entity_table' => 'civicrm_financial_item',
       ],
     ];
@@ -468,22 +461,20 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->registerParticipantAndPay($this->_expensiveFee);
     $this->submitForm($this->getCheapFeeID());
     $actualResults = $this->callAPISuccess('EntityFinancialTrxn', 'get', ['sequential' => 1, 'entity_table' => 'civicrm_financial_item', 'return' => ['amount', 'entity_id']])['values'];
+    $financialItemIDs = FinancialItem::get(FALSE)->addOrderBy('id')->execute()->column('id');
     $expectedResults = [
       [
-        'id' => 2,
         'amount' => 100.00,
-        'entity_id' => 1,
+        'entity_id' => $financialItemIDs[0],
       ],
       [
-        'id' => 4,
         // ensure that reverse entry is entered in the EntityFinancialTrxn table
         'amount' => -100.00,
-        'entity_id' => 2,
+        'entity_id' => $financialItemIDs[1],
       ],
       [
-        'id' => 5,
         'amount' => 50.00,
-        'entity_id' => 3,
+        'entity_id' => $financialItemIDs[2],
       ],
     ];
     foreach ($expectedResults as $key => $expectedResult) {
@@ -517,7 +508,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
    */
   protected function getParticipantLineItems(): array {
     return (array) LineItem::get(FALSE)
-      ->addWhere('contribution_id', '=', $this->ids['Participant']['order'])
+      ->addWhere('contribution_id', '=', $this->ids['Contribution']['order'])
       ->addOrderBy('id', 'DESC')
       ->execute();
   }
@@ -725,12 +716,6 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
    * keeps it that way.
    */
   public function testSwappingEqualPricedOptionKeepsThePayment(): void {
-    // validatePayments() does not survive a fee change: the financial items of the
-    // line that comes in stay allocated to the original payment, so the allocated
-    // total ends up above the amount paid. That reproduces on unpatched core and is
-    // unrelated to what this test pins down, so it is skipped for the same reason
-    // testCRM19273() skips it, above.
-    $this->isValidateFinancialsOnPostAssert = FALSE;
     $this->createPriceField('fifty_euros', 'Fifty euros', 50.00);
     $this->createPriceField('thirty_five_euros', 'Thirty-five euros', 35.00);
     $this->createPriceField('fifty_euros_again', 'Fifty euros again', 50.00);
@@ -762,7 +747,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
    *
    * $submittedLineItems built by ParticipantFeeSelection::postProcess() only
    * ever covers the participant being edited, and
-   * CRM_Contribute_BAO_FinancialProcessor::getLineItemsToAlter() treats any
+   * CRM_Contribute_BAO_FinancialProcessor::classifyLineItemChanges() treats any
    * of the contribution's other price_field_value_ids as having been
    * deselected. addLineItemsNotYetRepresented() is what keeps the other
    * participant's line item intact.
@@ -827,6 +812,215 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       "Participant B's line item must survive a fee change made for participant A on the same contribution."
     );
     $this->assertGreaterThan(0, $participantBLineAfter['qty'], "Participant B's line item should not have been cancelled.");
+  }
+
+  /**
+   * dev/core#6634: addLineItemsNotYetRepresented() keys the merged-in line
+   * items by price_field_value_id. If the participant being edited switches
+   * to the SAME price option another participant on the contribution
+   * already holds, that key is already present in $submittedLineItems (as
+   * the edited participant's own new selection), so the other participant's
+   * "keep unchanged" line item is never merged in. getLineItemsToAdd()/
+   * getLineItemsToAlter() then have only one entry for that
+   * price_field_value_id to work from, and misattribute it to whichever
+   * participant already had a line item for it.
+   *
+   * Reproduced on smaster.demo.civicrm.org (CiviCRM 6.21.alpha1): the
+   * participant being edited ended up with their old line item cancelled
+   * and no replacement, while the other participant's line item - and the
+   * contribution total - were also wrong.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testFeeChangeMatchingAnotherParticipantsOptionDoesNotLoseTheLineItem(): void {
+    $participantA = $this->createTestEntity('Participant', [
+      'contact_id' => $this->ids['Contact']['individual_0'],
+      'event_id' => $this->getEventID(),
+      'status_id:name' => 'Registered',
+      'role_id:name' => 'Attendee',
+    ], 'participantA');
+    $secondContactID = $this->individualCreate([], 'individual_1');
+    $participantB = $this->createTestEntity('Participant', [
+      'contact_id' => $secondContactID,
+      'event_id' => $this->getEventID(),
+      'status_id:name' => 'Registered',
+      'role_id:name' => 'Attendee',
+    ], 'participantB');
+
+    $contribution = Order::create(FALSE)
+      ->setContributionValues([
+        'contact_id' => $this->ids['Contact']['individual_0'],
+        'financial_type_id:name' => 'Event Fee',
+      ])
+      ->addLineItem([
+        'entity_table' => 'civicrm_participant',
+        'entity_id' => $participantA['id'],
+        'price_field_value_id' => $this->getExpensiveValueID(),
+      ])
+      ->addLineItem([
+        'entity_table' => 'civicrm_participant',
+        'entity_id' => $participantB['id'],
+        'price_field_value_id' => $this->getCheapFeeID(),
+      ])
+      ->execute()->single();
+
+    Payment::create(FALSE)
+      ->addValue('contribution_id', $contribution['id'])
+      ->addValue('total_amount', (float) $this->_cheapFee + (float) $this->_expensiveFee)
+      ->execute();
+
+    // Change participant A onto the SAME option participant B already holds.
+    $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
+      $this->getPriceFieldFormLabel('PaidEvent') => $this->getCheapFeeID(),
+      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+    ], [
+      'id' => $participantA['id'],
+      'action' => CRM_Core_Action::UPDATE,
+    ])->processForm();
+
+    $participantALine = LineItem::get(FALSE)
+      ->addWhere('contribution_id', '=', $contribution['id'])
+      ->addWhere('entity_id', '=', $participantA['id'])
+      ->addWhere('qty', '>', 0)
+      ->execute();
+    $this->assertCount(1, $participantALine, 'Participant A should have their own active line item for the new selection.');
+    $this->assertEquals($this->_cheapFee, $participantALine->first()['line_total']);
+
+    $participantBLine = LineItem::get(FALSE)
+      ->addWhere('contribution_id', '=', $contribution['id'])
+      ->addWhere('entity_id', '=', $participantB['id'])
+      ->execute()->single();
+    $this->assertGreaterThan(0, $participantBLine['qty'], "Participant B's line item must survive participant A's fee change.");
+    $this->assertEquals($this->_cheapFee, $participantBLine['line_total']);
+
+    $this->assertEquals(
+      (float) $this->_cheapFee * 2,
+      $this->contributionInvoice($contribution['id']),
+      'The contribution total must reflect both participants holding the cheap fee.'
+    );
+  }
+
+  /**
+   * dev/core#6634: getNonCancelledFinancialItems() groups a contribution's
+   * financial items by price_field_value_id alone to spot already-reversed
+   * +/- pairs. If a DIFFERENT participant on the same contribution has an
+   * unrelated, already-fully-reversed pair under that same price option,
+   * this participant's own still-active financial item can get swept into
+   * that pairing and wrongly treated as already reversed - so when their
+   * own fee changes, the required reversal is silently skipped.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testFeeChangeDoesNotPruneAnotherParticipantsUnrelatedFinancialItem(): void {
+    $participantA = $this->createTestEntity('Participant', [
+      'contact_id' => $this->ids['Contact']['individual_0'],
+      'event_id' => $this->getEventID(),
+      'status_id:name' => 'Registered',
+      'role_id:name' => 'Attendee',
+    ], 'participantA');
+    $secondContactID = $this->individualCreate([], 'individual_1');
+    $participantB = $this->createTestEntity('Participant', [
+      'contact_id' => $secondContactID,
+      'event_id' => $this->getEventID(),
+      'status_id:name' => 'Registered',
+      'role_id:name' => 'Attendee',
+    ], 'participantB');
+
+    $contribution = Order::create(FALSE)
+      ->setContributionValues([
+        'contact_id' => $this->ids['Contact']['individual_0'],
+        'financial_type_id:name' => 'Event Fee',
+      ])
+      ->addLineItem([
+        'entity_table' => 'civicrm_participant',
+        'entity_id' => $participantA['id'],
+        'price_field_value_id' => $this->getCheapFeeID(),
+      ])
+      ->addLineItem([
+        'entity_table' => 'civicrm_participant',
+        'entity_id' => $participantB['id'],
+        'price_field_value_id' => $this->getVeryExpensiveID(),
+      ])
+      ->execute()->single();
+
+    Payment::create(FALSE)
+      ->addValue('contribution_id', $contribution['id'])
+      ->addValue('total_amount', (float) $this->_cheapFee + (float) $this->_veryExpensive)
+      ->execute();
+
+    $participantALine = LineItem::get(FALSE)
+      ->addWhere('contribution_id', '=', $contribution['id'])
+      ->addWhere('entity_id', '=', $participantA['id'])
+      ->execute()->single();
+
+    // Participant B's unrelated, already-fully-reversed OLD selection at the
+    // same price option participant A currently holds - built directly, as
+    // a stand-in for a past fee change, so it carries its own original +
+    // reversal financial items without a second form submission.
+    $oldLineItemForB = $this->createTestEntity('LineItem', [
+      'contribution_id' => $contribution['id'],
+      'entity_table' => 'civicrm_participant',
+      'entity_id' => $participantB['id'],
+      'price_field_id' => $participantALine['price_field_id'],
+      'price_field_value_id' => $this->getCheapFeeID(),
+      'label' => $participantALine['label'],
+      'qty' => 0,
+      'unit_price' => $this->_cheapFee,
+      'line_total' => 0,
+      'financial_type_id' => $participantALine['financial_type_id'],
+    ], 'oldLineItemB');
+
+    $incomeAccountID = CRM_Financial_BAO_FinancialAccount::getFinancialAccountForFinancialTypeByRelationship(
+      $participantALine['financial_type_id'],
+      'Income Account is'
+    );
+    $this->createTestEntity('FinancialItem', [
+      'transaction_date' => date('Y-m-d'),
+      'contact_id' => $secondContactID,
+      'amount' => $this->_cheapFee,
+      'currency' => 'USD',
+      'entity_table' => 'civicrm_line_item',
+      'entity_id' => $oldLineItemForB['id'],
+      'description' => $participantALine['label'],
+      'status_id:name' => 'Paid',
+      'financial_account_id' => $incomeAccountID,
+    ], 'oldFinancialItemB1');
+    $this->createTestEntity('FinancialItem', [
+      'transaction_date' => date('Y-m-d'),
+      'contact_id' => $secondContactID,
+      'amount' => -(float) $this->_cheapFee,
+      'currency' => 'USD',
+      'entity_table' => 'civicrm_line_item',
+      'entity_id' => $oldLineItemForB['id'],
+      'description' => $participantALine['label'],
+      'status_id:name' => 'Paid',
+      'financial_account_id' => $incomeAccountID,
+    ], 'oldFinancialItemB2');
+
+    // Change participant A's own fee - this is what triggers a scan of
+    // every financial item on the contribution's line items, including
+    // participant B's unrelated pair above.
+    $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
+      $this->getPriceFieldFormLabel('PaidEvent') => $this->getExpensiveValueID(),
+      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+    ], [
+      'id' => $participantA['id'],
+      'action' => CRM_Core_Action::UPDATE,
+    ])->processForm();
+
+    $participantAOldLineFinancialItems = array_map('floatval', FinancialItem::get(FALSE)
+      ->addWhere('entity_table', '=', 'civicrm_line_item')
+      ->addWhere('entity_id', '=', $participantALine['id'])
+      ->addSelect('amount')
+      ->execute()
+      ->column('amount'));
+    sort($participantAOldLineFinancialItems);
+
+    $this->assertEquals(
+      [-(float) $this->_cheapFee, (float) $this->_cheapFee],
+      $participantAOldLineFinancialItems,
+      "Participant A's original financial item must be reversed on their own fee change, not wrongly treated as already reversed because participant B has an unrelated reversed pair under the same price option."
+    );
   }
 
   /**

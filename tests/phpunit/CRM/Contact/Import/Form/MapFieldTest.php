@@ -59,6 +59,21 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testSubmit(array $params, array $mapper, array $expecteds = []): void {
+    // The data provider runs before the location types exist, so it gives names; look up the ids.
+    foreach ($mapper as &$mapperField) {
+      if (isset($mapperField[1]) && !is_numeric($mapperField[1])) {
+        $mapperField[1] = $this->getLocationTypeID($mapperField[1]);
+      }
+    }
+    unset($mapperField);
+    foreach ($expecteds as &$expected) {
+      foreach ($expected['result'] ?? [] as $key => $expectedValues) {
+        if (isset($expectedValues['location_type_id'])) {
+          $expected['result'][$key]['location_type_id'] = $this->getLocationTypeID($expectedValues['location_type_id']);
+        }
+      }
+    }
+    unset($expected);
     $form = $this->getMapFieldFormObject(array_merge($params, ['mapper' => $mapper]));
     $form->preProcess();
     $form->postProcess();
@@ -95,7 +110,7 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
           0 => [0 => 'do_not_import'],
           1 => [0 => 'first_name'],
           2 => [0 => 'last_name'],
-          3 => [0 => 'street_address', 1 => 2],
+          3 => [0 => 'street_address', 1 => 'Work'],
         ],
       ],
       'save_mapping' => [
@@ -108,7 +123,7 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
           0 => [0 => 'do_not_import'],
           1 => [0 => 'first_name'],
           2 => [0 => 'last_name'],
-          3 => [0 => 'street_address', 1 => 2],
+          3 => [0 => 'street_address', 1 => 'Work'],
         ],
         [
           ['entity' => 'mapping', 'count' => 1, 'values' => ['name' => 'new mapping']],
@@ -121,7 +136,7 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
               0 => ['name' => 'do_not_import'],
               1 => ['name' => 'first_name'],
               2 => ['name' => 'last_name'],
-              3 => ['name' => 'street_address', 'location_type_id' => 2],
+              3 => ['name' => 'street_address', 'location_type_id' => 'Work'],
             ],
           ],
         ],
@@ -186,6 +201,16 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testLoadSavedMapping(array $fieldSpec, string $expectedJS, array $expectedDefaults): void {
+    if (isset($fieldSpec['relationship_type_id'])) {
+      // The data provider runs before the relationship types exist, so it gives the name; look up the id.
+      $fieldSpec['relationship_type_id'] = $this->getRelationshipTypeID($fieldSpec['relationship_type_id']);
+      $expectedDefaults['mapper[0]'][0] = sprintf($expectedDefaults['mapper[0]'][0], $fieldSpec['relationship_type_id']);
+    }
+    if (isset($fieldSpec['location_type_id'])) {
+      // As above, the data provider gives the location type name.
+      $fieldSpec['location_type_id'] = $this->getLocationTypeID($fieldSpec['location_type_id']);
+      $expectedDefaults['mapper[0]'][1] = $fieldSpec['location_type_id'];
+    }
     $mapping = $this->callAPISuccess('Mapping', 'create', ['name' => 'my test']);
     $this->callAPISuccess('MappingField', 'create', array_merge(['mapping_id' => $mapping['id']], $fieldSpec));
     $this->form = $this->form = $this->getMapFieldFormObject(['savedMapping' => $mapping['id'], 'sqlQuery' => 'SELECT nada FROM civicrm_tmp_d_import_job_xxx']);
@@ -214,9 +239,9 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
     $processor->setMetadata($parser->getFieldsMetadata());
     $this->assertEquals(3, $processor->getPhoneOrIMTypeID(10));
     $this->assertEquals(3, $processor->getPhoneTypeID(10));
-    $this->assertEquals(1, $processor->getLocationTypeID(10));
+    $this->assertEquals($this->getLocationTypeID('Home'), $processor->getLocationTypeID(10));
     $this->assertEquals(2, $processor->getWebsiteTypeID(8));
-    $this->assertEquals('4_a_b', $processor->getRelationshipKey(9));
+    $this->assertEquals($this->getRelationshipTypeID('Sibling of') . '_a_b', $processor->getRelationshipKey(9));
     $this->assertEquals('addressee', $processor->getFieldName(0));
     $this->assertEquals('street_address', $processor->getFieldName(3));
     $this->assertEquals($this->getCustomFieldName('text'), $processor->getFieldName(4));
@@ -234,14 +259,14 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
         ['mapper[0]' => ['first_name']],
       ],
       [
-        ['name' => 'phone', 'contact_type' => 'Individual', 'column_number' => 0, 'phone_type_id' => 1, 'location_type_id' => 2],
+        ['name' => 'phone', 'contact_type' => 'Individual', 'column_number' => 0, 'phone_type_id' => 1, 'location_type_id' => 'Work'],
         "swapOptions(document.forms.MapField, 'mapper[0]', 2, 4, 'hs_mapper_0_');\n",
-        ['mapper[0]' => ['phone', 2, 1]],
+        ['mapper[0]' => ['phone', 'Work', 1]],
       ],
       [
-        ['name' => 'im', 'contact_type' => 'Individual', 'column_number' => 0, 'im_provider_id' => 1, 'location_type_id' => 2],
+        ['name' => 'im', 'contact_type' => 'Individual', 'column_number' => 0, 'im_provider_id' => 1, 'location_type_id' => 'Work'],
         "swapOptions(document.forms.MapField, 'mapper[0]', 2, 4, 'hs_mapper_0_');\n",
-        ['mapper[0]' => ['im', 2, 1]],
+        ['mapper[0]' => ['im', 'Work', 1]],
       ],
       [
         ['name' => 'url', 'contact_type' => 'Individual', 'column_number' => 0, 'website_type_id' => 1],
@@ -250,14 +275,14 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
       ],
       [
         // Yes, the relationship mapping really does use url whereas non relationship uses website because... legacy
-        ['name' => 'url', 'contact_type' => 'Individual', 'column_number' => 0, 'website_type_id' => 1, 'relationship_type_id' => 1, 'relationship_direction' => 'a_b'],
+        ['name' => 'url', 'contact_type' => 'Individual', 'column_number' => 0, 'website_type_id' => 1, 'relationship_type_id' => 'Child of', 'relationship_direction' => 'a_b'],
         "swapOptions(document.forms.MapField, 'mapper[0]', 2, 4, 'hs_mapper_0_');\n",
-        ['mapper[0]' => ['1_a_b', 'url', 1]],
+        ['mapper[0]' => ['%d_a_b', 'url', 1]],
       ],
       [
-        ['name' => 'phone', 'contact_type' => 'Individual', 'column_number' => 0, 'phone_type_id' => 1, 'relationship_type_id' => 1, 'relationship_direction' => 'b_a'],
+        ['name' => 'phone', 'contact_type' => 'Individual', 'column_number' => 0, 'phone_type_id' => 1, 'relationship_type_id' => 'Child of', 'relationship_direction' => 'b_a'],
         '',
-        ['mapper[0]' => ['1_b_a', 'phone', 'Primary', 1]],
+        ['mapper[0]' => ['%d_b_a', 'phone', 'Primary', 1]],
       ],
       [
         ['name' => 'do_not_import', 'contact_type' => 'Individual', 'column_number' => 0],
@@ -359,7 +384,7 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
       1 => 'postal_greeting',
       2 => 'phone',
       3 => 'street_address',
-      4 => 'custom_1',
+      4 => $this->getCustomFieldName('text'),
       5 => 'street_address',
       6 => 'city',
       7 => 'state_province',
@@ -399,7 +424,7 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
         [
           'name' => $legacyMode ? 'Phone' : 'phone',
           'column_number' => '2',
-          'location_type_id' => '1',
+          'location_type_id' => $this->getLocationTypeID('Home'),
           'phone_type_id' => '1',
         ],
         [
@@ -413,39 +438,39 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
         [
           'name' => $legacyMode ? 'Street Address' : 'street_address',
           'column_number' => '5',
-          'location_type_id' => '1',
+          'location_type_id' => $this->getLocationTypeID('Home'),
         ],
         [
           'name' => $legacyMode ? 'City' : 'city',
           'column_number' => '6',
-          'location_type_id' => '1',
+          'location_type_id' => $this->getLocationTypeID('Home'),
         ],
         [
           'name' => $legacyMode ? 'State Province' : 'state_province',
           'column_number' => '7',
-          'relationship_type_id' => 4,
+          'relationship_type_id' => $this->getRelationshipTypeID('Sibling of'),
           'relationship_direction' => 'a_b',
-          'location_type_id' => '1',
+          'location_type_id' => $this->getLocationTypeID('Home'),
         ],
         [
           'name' => $legacyMode ? 'Url' : 'url',
           'column_number' => '8',
-          'relationship_type_id' => 4,
+          'relationship_type_id' => $this->getRelationshipTypeID('Sibling of'),
           'relationship_direction' => 'a_b',
           'website_type_id' => 2,
         ],
         [
           'name' => $legacyMode ? 'Phone' : 'phone',
           'column_number' => '9',
-          'relationship_type_id' => 4,
-          'location_type_id' => '1',
+          'relationship_type_id' => $this->getRelationshipTypeID('Sibling of'),
+          'location_type_id' => $this->getLocationTypeID('Home'),
           'relationship_direction' => 'a_b',
           'phone_type_id' => 2,
         ],
         [
           'name' => $legacyMode ? 'Phone' : 'phone',
           'column_number' => '10',
-          'location_type_id' => '1',
+          'location_type_id' => $this->getLocationTypeID('Home'),
           'phone_type_id' => '3',
         ],
       ] as $mappingField) {

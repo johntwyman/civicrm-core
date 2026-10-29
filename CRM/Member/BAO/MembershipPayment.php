@@ -99,8 +99,7 @@ class CRM_Member_BAO_MembershipPayment extends CRM_Member_DAO_MembershipPayment 
    * @internal
    */
   public static function getLatestContributionIDFromLineitemAndFallbackToMembershipPayment(int $membershipID) {
-    if (!class_exists('\Civi\Api4\LineItem')) {
-      // civi_contribute is not enabled
+    if (!CRM_Core_Component::isEnabled('CiviContribute')) {
       return NULL;
     }
     $latestMembershipLineItem = LineItem::get(FALSE)
@@ -222,6 +221,18 @@ class CRM_Member_BAO_MembershipPayment extends CRM_Member_DAO_MembershipPayment 
     ])) {
       self::legacyMembershipPaymentCreate($membershipID, $contributionID, $isSkipLineItem);
     }
+  }
+
+  /**
+   * @param string|null $entityName
+   * @param int|null $userId
+   * @param array $conditions
+   * @inheritDoc
+   */
+  public function addSelectWhereClause(?string $entityName = NULL, ?int $userId = NULL, array $conditions = []): array {
+    $clauses['contribution_id'] = CRM_Utils_SQL::mergeSubquery('Contribution');
+    CRM_Utils_Hook::selectWhereClause($this, $clauses, $userId, $conditions);
+    return $clauses;
   }
 
 }

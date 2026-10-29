@@ -62,29 +62,29 @@ class CRM_Core_BAO_MessageTemplate extends CRM_Core_DAO_MessageTemplate implemen
   private static function checkWorkflow(&$params) {
     // System Workflow Templates have a specific wodkflow_id in them but normal user end message templates don't
     // If we have an id check to see if we are update, and need to check if original is a system workflow or not.
-    $systemWorkflowPermissionDeniedMessage = 'Editing or creating system workflow messages requires edit system workflow message templates permission or the edit message templates permission';
-    $userWorkflowPermissionDeniedMessage = 'Editing or creating user driven workflow messages requires edit user-driven message templates or the edit message templates permission';
+    $systemWorkflowPermissionDeniedMessage = ts('Editing or creating system workflow messages requires edit system workflow message templates permission or the edit message templates permission');
+    $userWorkflowPermissionDeniedMessage = ts('Editing or creating user driven workflow messages requires edit user-driven message templates or the edit message templates permission');
     if (!empty($params['check_permissions'])) {
       if (!CRM_Core_Permission::check('edit message templates')) {
         if (!empty($params['id'])) {
           $details = civicrm_api3('MessageTemplate', 'getSingle', ['id' => $params['id']]);
           if (!empty($details['workflow_id']) || !empty($details['workflow_name'])) {
             if (!CRM_Core_Permission::check('edit system workflow message templates')) {
-              throw new \Civi\API\Exception\UnauthorizedException(ts('%1', [1 => $systemWorkflowPermissionDeniedMessage]));
+              throw new \Civi\API\Exception\UnauthorizedException($systemWorkflowPermissionDeniedMessage);
             }
           }
           elseif (!CRM_Core_Permission::check('edit user-driven message templates')) {
-            throw new \Civi\API\Exception\UnauthorizedException(ts('%1', [1 => $userWorkflowPermissionDeniedMessage]));
+            throw new \Civi\API\Exception\UnauthorizedException($userWorkflowPermissionDeniedMessage);
           }
         }
         else {
           if (!empty($params['workflow_id']) || !empty($params['workflow_name'])) {
             if (!CRM_Core_Permission::check('edit system workflow message templates')) {
-              throw new \Civi\API\Exception\UnauthorizedException(ts('%1', [1 => $systemWorkflowPermissionDeniedMessage]));
+              throw new \Civi\API\Exception\UnauthorizedException($systemWorkflowPermissionDeniedMessage);
             }
           }
           elseif (!CRM_Core_Permission::check('edit user-driven message templates')) {
-            throw new \Civi\API\Exception\UnauthorizedException(ts('%1', [1 => $userWorkflowPermissionDeniedMessage]));
+            throw new \Civi\API\Exception\UnauthorizedException($userWorkflowPermissionDeniedMessage);
           }
         }
       }
@@ -495,6 +495,26 @@ class CRM_Core_BAO_MessageTemplate extends CRM_Core_DAO_MessageTemplate implemen
     $fields['civicrm_msg_template']['msg_subject'] = TRUE;
     $fields['civicrm_msg_template']['msg_text'] = TRUE;
     $fields['civicrm_msg_template']['msg_html'] = TRUE;
+  }
+
+  /**
+   * Get the entities available for the `usage` field, one per entity that
+   * declares a `token_class` (see `Civi\Core\Container`).
+   *
+   * Entities of disabled components (e.g. Case) are left out, as their tokens are inactive (see CRM_Core_EntityTokens::checkActive()).
+   *
+   * @return array
+   *   Array(string $entityName => string $entityTitle)
+   */
+  public static function getTokenEntityOptions(): array {
+    $enabledEntities = \Civi::service('action_object_provider')->getEntities();
+    $options = [];
+    foreach (CRM_Core_DAO_AllCoreTables::getClassesByProperty('token_class') as $entity => $class) {
+      if (isset($enabledEntities[$entity])) {
+        $options[$entity] = \Civi\Api4\Utils\CoreUtil::getInfoItem($entity, 'title') ?: $entity;
+      }
+    }
+    return $options;
   }
 
 }

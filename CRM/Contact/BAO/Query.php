@@ -2966,7 +2966,7 @@ class CRM_Contact_BAO_Query {
     if (!empty($clause)) {
       $this->_where[$grouping][] = "( " . implode(' OR ', $clause) . " )";
     }
-    $this->_qill[$grouping][] = ts('Contact Subtype %1 ', [1 => $qillOperators[$op]]) . implode(' ' . ts('or') . ' ', array_keys($clause));
+    $this->_qill[$grouping][] = ts('Contact Subtype %1 %2', [1 => $qillOperators[$op], 2 => implode(' ' . ts('or') . ' ', array_keys($clause))]);
   }
 
   /**
@@ -3739,7 +3739,7 @@ WHERE  $smartGroupClause
     $name = trim($value);
     $cond = " contact_a.sort_name LIKE '" . CRM_Core_DAO::escapeWildCardString($name) . "%'";
     $this->_where[$grouping][] = $cond;
-    $this->_qill[$grouping][] = ts('Showing only Contacts starting with: \'%1\'', [1 => $name]);
+    $this->_qill[$grouping][] = ts("Showing only Contacts starting with: '%1'", [1 => $name]);
   }
 
   /**
@@ -3802,11 +3802,11 @@ WHERE  $smartGroupClause
     }
     elseif ($name == 'postal_code_low') {
       $this->_where[$grouping][] = " ( $field >= '$val' ) ";
-      $this->_qill[$grouping][] = ts('Postal code greater than or equal to \'%1\'', [1 => $value]);
+      $this->_qill[$grouping][] = ts("Postal code greater than or equal to '%1'", [1 => $value]);
     }
     elseif ($name == 'postal_code_high') {
       $this->_where[$grouping][] = " ( $field <= '$val' ) ";
-      $this->_qill[$grouping][] = ts('Postal code less than or equal to \'%1\'', [1 => $value]);
+      $this->_qill[$grouping][] = ts("Postal code less than or equal to '%1'", [1 => $value]);
     }
   }
 
@@ -5647,6 +5647,7 @@ civicrm_relationship.start_date > {$today}
         return ($dataType === 'Date') ? " $field IS NOT NULL " : " (NULLIF($field, '') IS NOT NULL) ";
 
       case 'RLIKE':
+        $value = $isAlreadyEscaped ? $value : CRM_Core_DAO::escapeString($value);
         return " CAST({$field} AS BINARY) RLIKE BINARY '{$value}' ";
 
       case 'IN':
@@ -5823,8 +5824,7 @@ AND   displayRelType.is_active = 1
       $qcache['relTypeLabel'] = $relationshipTypeLabel;
       $_rTempCache[$arg_sig]['queries'][$this->_displayRelationshipType] = $qcache;
     }
-    $qillMessage = ts('Contacts with a Relationship Type of: ');
-    $iqill = $qillMessage . "'" . $qcache['relTypeLabel'] . "'";
+    $iqill = ts("Contacts with a Relationship Type of: '%1'", [1 => $qcache['relTypeLabel']]);
     if (!is_array($this->_qill[0]) || !in_array($iqill, $this->_qill[0])) {
       $this->_qill[0][] = $iqill;
     }
@@ -7101,6 +7101,11 @@ AND   displayRelType.is_active = 1
       return;
     }
 
+    if ($fieldName === 'event') {
+      $this->_where[$grouping][] = CRM_Event_BAO_Query::getEventActiveOnClause($dates[0], $dates[1]);
+      return;
+    }
+
     if (empty($dates[0])) {
       // ie. no start date we only have end date
       $this->_where[$grouping][] = $secondWhere . " <= '{$dates[1]}'";
@@ -7257,15 +7262,17 @@ AND   displayRelType.is_active = 1
    */
   protected function getQillForRelativeDateRange($from, $to, string $fieldTitle, string $relativeRange): string {
     if (!$from) {
-      return ts('%1 is ', [1 => $fieldTitle]) . $relativeRange . ' (' . ts('to %1', [1 => CRM_Utils_Date::customFormat($to)]) . ')';
+      return ts('%1 is %2 (to %3)', [1 => $fieldTitle, 2 => $relativeRange, 3 => CRM_Utils_Date::customFormat($to)]);
     }
     if (!$to) {
-      return ts('%1 is ', [1 => $fieldTitle]) . $relativeRange . ' (' . ts('from %1', [1 => CRM_Utils_Date::customFormat($from)]) . ')';
+      return ts('%1 is %2 (from %3)', [1 => $fieldTitle, 2 => $relativeRange, 3 => CRM_Utils_Date::customFormat($from)]);
     }
-    return ts('%1 is ', [1 => $fieldTitle]) . $relativeRange . ' (' . ts('between %1 and %2', [
-      1 => CRM_Utils_Date::customFormat($from),
-      2 => CRM_Utils_Date::customFormat($to),
-    ]) . ')';
+    return ts('%1 is %2 (between %3 and %4)', [
+      1 => $fieldTitle,
+      2 => $relativeRange,
+      3 => CRM_Utils_Date::customFormat($from),
+      4 => CRM_Utils_Date::customFormat($to),
+    ]);
   }
 
 }

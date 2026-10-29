@@ -1242,38 +1242,6 @@ abstract class CRM_Utils_Hook {
   }
 
   /**
-   * Use this hook to populate the list of contacts returned by Contact Reference custom fields.
-   * By default, Contact Reference fields will search on and return all CiviCRM contacts.
-   * If you want to limit the contacts returned to a specific group, or some other criteria
-   * - you can override that behavior by providing a SQL query that returns some subset of your contacts.
-   * The hook is called when the query is executed to get the list of contacts to display.
-   *
-   * @param mixed $query
-   *   - the query that will be executed (input and output parameter);.
-   *   It's important to realize that the ACL clause is built prior to this hook being fired,
-   *   so your query will ignore any ACL rules that may be defined.
-   *   Your query must return two columns:
-   *     the contact 'data' to display in the autocomplete dropdown (usually contact.sort_name - aliased as 'data')
-   *     the contact IDs
-   * @param string $queryText
-   *   The name string to execute the query against (this is the value being typed in by the user).
-   * @param string $context
-   *   The context in which this ajax call is being made (for example: 'customfield', 'caseview').
-   * @param int $id
-   *   The id of the object for which the call is being made.
-   *   For custom fields, it will be the custom field id
-   *
-   * @return mixed
-   */
-  public static function contactListQuery(&$query, $queryText, $context, $id) {
-    $null = NULL;
-    return self::singleton()->invoke(['query', 'queryText', 'context', 'id'], $query, $queryText, $context, $id,
-      $null, $null,
-      'civicrm_contactListQuery'
-    );
-  }
-
-  /**
    * Hook definition for altering payment parameters before talking to a payment processor back end.
    *
    * Definition will look like this:
@@ -3059,19 +3027,27 @@ abstract class CRM_Utils_Hook {
    *   - Formula: hook_civicrm_initiators::{$context['for']}
    *   - Example: hook_civicrm_initiators::PaymentProcessor
    *
-   * @since 6.10
+   * @since 6.17
    * @param array $context
    *   Descriptor for the context/record wherein we want an API key. Some combination of:
    *   - for: string (REQUIRED), a symbol that identifies the kind of context, e.g.
-   *      - "PaymentProcessor" (v6.10+): Add or reset the API key for a PaymentProcessor
+   *      - "PaymentProcessor" (v6.17+): Add or reset the API key for a PaymentProcessor
+   *      - "MailSettings" (v6.21+): Add or reset the credentials for a Mail Account
    *   - payment_processor_type: string (OPTIONAL), a symbol like "Stripe" which identifies the type of payment-processor
    *   - payment_processor_id: int (OPTIONAL), unique id for the PaymentProcessor record
    *   - is_test: bool (OPTIONAL), whether this payproc is for testing
+   *   - mail_settings_id: int (OPTIONAL), unique id for the MailSettings record
    * @param array $available
    *   List of available actions. Each item has a symbolic-key, and it has the properties:
    *     - title: string
    *     - render: callable, the function which renders the initiator buttons
    *        Signature: function(CRM_Core_Region $region, array $context, array $initiator):
+   *     - is_connected: bool (OPTIONAL), whether this record is currently connected via this initiator
+   *     - status_message: string (OPTIONAL), describes the current connection, e.g. "Connected as foo@example.org"
+   *     - status_severity: string (OPTIONAL), one of 'success', 'warning', 'danger'
+   *     - manage_url: string (OPTIONAL), address of the screen which administers this connection
+   *     - managed_fields: string[] (OPTIONAL), form fields supplied by this connection at runtime.
+   *        The form hides these, and leaves their stored values untouched on save.
    * @param string|null $default
    *
    * @return mixed
@@ -3329,13 +3305,41 @@ abstract class CRM_Utils_Hook {
   }
 
   /**
-   * Extensions can define new formats for relative date filter "tokens".
-   * @param string $filter - the filter token, stored in civicrm_option_value
+   * @deprecated since 6.20 will be removed around 6.32. Use hook_civicrm_relativeDateSql instead.
+   *
+   * @param string $filter
    * @return array|false
    *   An array with two elements: $dates['from'] and $dates['to'], or FALSE if the hook isn't in use.
    */
   public static function relativeDate($filter) {
-    return self::singleton()->invoke(['filter'], $filter, self::$_nullObject, self::$_nullObject, self::$_nullObject, self::$_nullObject, self::$_nullObject, 'civicrm_relativeDate');
+    $result = self::singleton()->invoke(['filter'], $filter, self::$_nullObject, self::$_nullObject, self::$_nullObject, self::$_nullObject, self::$_nullObject, 'civicrm_relativeDate');
+    if (is_array($result) && !empty(array_filter($result))) {
+      CRM_Core_Error::deprecatedWarning('hook_civicrm_relativeDate is deprecated since 6.20 and will be removed around 6.32. Use hook_civicrm_relativeDateSql instead.');
+    }
+    return $result;
+  }
+
+  /**
+   * Evaluate custom relative date filter formats.
+   *
+   * Extensions can define new formats by adding values to the relative_date_filters,
+   * then implement this hook to transform them into 'from' and 'to' SQL expressions.
+   *
+   * @param string $relativeTerm
+   *   The relative term, e.g. 'this', 'previous', 'previous_2', 'ending_30', 'starting'.
+   * @param string|null $unit
+   *   The date unit, e.g. 'day', 'week', 'month', 'quarter', 'year', 'fiscal_year'.
+   * @param array $sql
+   *   Output SQL expressions ['from' => startExpression, 'to' => endExpression] passed by reference.
+   */
+  public static function relativeDateSql(string $relativeTerm, ?string $unit, array &$sql): void {
+    $null = NULL;
+    self::singleton()->invoke(
+      ['relativeTerm', 'unit', 'sql'],
+      $relativeTerm, $unit, $sql,
+      $null, $null, $null,
+      'civicrm_relativeDateSql'
+    );
   }
 
 }

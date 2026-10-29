@@ -51,10 +51,10 @@ class CiviCaseTestCase extends CiviUnitTestCase {
     // We used to be inconsistent about "HousingSupport" vs "housing_support".
     // Now, the rule is simply: use the "name" from "civicrm_case_type.name".
     $this->caseType = 'housing_support';
-    $this->caseTypeId = 1;
+    $this->caseTypeId = CRM_Core_PseudoConstant::getKey('CRM_Case_BAO_Case', 'case_type_id', $this->caseType);
 
     $this->individualCreate(['first_name' => 'site', 'last_name' => 'admin'], 'site_admin');
-    $this->loadAllFixtures();
+    $this->createFixtureCase();
 
     // enable the default custom templates for the case type xml files
     $this->customDirectories(['template_path' => TRUE]);
@@ -93,6 +93,7 @@ class CiviCaseTestCase extends CiviUnitTestCase {
       'civicrm_group_contact',
       'civicrm_file',
       'civicrm_entity_file',
+      'civicrm_log',
     ], TRUE);
     if (!empty($this->ids['CaseType'])) {
       CaseType::delete(FALSE)->addWhere('id', 'IN', $this->ids['CaseType'])->execute();
@@ -100,6 +101,28 @@ class CiviCaseTestCase extends CiviUnitTestCase {
     CRM_Case_XMLRepository::singleton()->flush();
     parent::tearDown();
     $this->assertEntityCleanup();
+  }
+
+  /**
+   * Insert case 1, which some tests rely on.
+   *
+   * Replicates the SQL formerly run by loadAllFixtures() from tests/fixtures/case*.json.
+   */
+  protected function createFixtureCase(): void {
+    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 0');
+    CRM_Core_DAO::executeQuery('TRUNCATE civicrm_case');
+    CRM_Core_DAO::executeQuery('TRUNCATE civicrm_case_contact');
+    // Truncating reset the auto-increments.
+    \Civi\Test::schema()->setAutoIncrement(['civicrm_case', 'civicrm_case_contact']);
+    CRM_Core_DAO::executeQuery("INSERT INTO civicrm_case (case_type_id, status_id, start_date, subject) VALUES (%1, 1, '2023-01-02', 'test case')", [
+      1 => [$this->caseTypeId, 'Positive'],
+    ]);
+    $this->ids['Case']['fixture'] = (int) CRM_Core_DAO::singleValueQuery('SELECT LAST_INSERT_ID()');
+    CRM_Core_DAO::executeQuery('INSERT INTO civicrm_case_contact (case_id, contact_id) VALUES (%1, %2)', [
+      1 => [$this->ids['Case']['fixture'], 'Positive'],
+      2 => [$this->ids['Contact']['site_admin'], 'Positive'],
+    ]);
+    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 1');
   }
 
   public static function setUpBeforeClass(): void {

@@ -21,7 +21,7 @@ class api_v3_FinancialTypeACLTest extends CiviUnitTestCase {
 
   protected $_individualId;
   protected $_contribution;
-  protected $_financialTypeId = 1;
+  protected $_financialTypeId;
   protected $_apiversion = 3;
   protected $_entity = 'Contribution';
   public $debug = 0;
@@ -47,6 +47,7 @@ class api_v3_FinancialTypeACLTest extends CiviUnitTestCase {
    */
   public function setUp(): void {
     parent::setUp();
+    $this->_financialTypeId = $this->getFinancialTypeID('Donation');
 
     $this->_apiversion = 3;
     $this->_individualId = $this->individualCreate();
@@ -133,7 +134,7 @@ class api_v3_FinancialTypeACLTest extends CiviUnitTestCase {
 
     $this->assertEquals(1, $contribution['count']);
     $this->assertEquals($contribution['values'][$contribution['id']]['contact_id'], $this->_individualId);
-    $this->assertEquals($contribution['values'][$contribution['id']]['financial_type_id'], 1);
+    $this->assertEquals($contribution['values'][$contribution['id']]['financial_type_id'], $this->getFinancialTypeID('Donation'));
     $this->assertEquals($contribution['values'][$contribution['id']]['total_amount'], 100.00);
     $this->assertEquals($contribution['values'][$contribution['id']]['non_deductible_amount'], 10.00);
     $this->assertEquals($contribution['values'][$contribution['id']]['fee_amount'], 5.00);
@@ -194,18 +195,18 @@ class api_v3_FinancialTypeACLTest extends CiviUnitTestCase {
       'check_permissions' => TRUE,
       'api.line_item.create' => [
         [
-          'price_field_id' => 1,
+          'price_field_id' => $this->getDefaultContributionPriceFieldID(),
           'qty' => 2,
           'line_total' => '20',
           'unit_price' => '10',
-          'financial_type_id' => 1,
+          'financial_type_id' => $this->getFinancialTypeID('Donation'),
         ],
         [
-          'price_field_id' => 1,
+          'price_field_id' => $this->getDefaultContributionPriceFieldID(),
           'qty' => 1,
           'line_total' => '80',
           'unit_price' => '80',
-          'financial_type_id' => 2,
+          'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
         ],
       ],
     ];
@@ -235,15 +236,16 @@ class api_v3_FinancialTypeACLTest extends CiviUnitTestCase {
     $lineItemParams = [
       'contribution_id' => $contribution['id'],
       'entity_table' => 'civicrm_contribution',
+      'sequential' => 1,
     ];
     $lineItems = $this->callAPISuccess('LineItem', 'get', $lineItemParams);
     $this->assertEquals(3, $lineItems['count']);
-    $this->assertEquals(100.00, $lineItems['values'][3]['line_total']);
-    $this->assertEquals(20, $lineItems['values'][4]['line_total']);
-    $this->assertEquals(80, $lineItems['values'][5]['line_total']);
-    $this->assertEquals(1, $lineItems['values'][3]['financial_type_id']);
-    $this->assertEquals(1, $lineItems['values'][4]['financial_type_id']);
-    $this->assertEquals(2, $lineItems['values'][5]['financial_type_id']);
+    $this->assertEquals(100.00, $lineItems['values'][0]['line_total']);
+    $this->assertEquals(20, $lineItems['values'][1]['line_total']);
+    $this->assertEquals(80, $lineItems['values'][2]['line_total']);
+    $this->assertEquals($this->getFinancialTypeID('Donation'), $lineItems['values'][0]['financial_type_id']);
+    $this->assertEquals($this->getFinancialTypeID('Donation'), $lineItems['values'][1]['financial_type_id']);
+    $this->assertEquals($this->getFinancialTypeID('Member Dues'), $lineItems['values'][2]['financial_type_id']);
 
     $this->callAPISuccess('Contribution', 'Delete', [
       'id' => $contribution['id'],

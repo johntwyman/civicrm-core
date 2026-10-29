@@ -9,6 +9,9 @@
  +--------------------------------------------------------------------+
  */
 
+use Civi\Api4\Order;
+use Civi\Api4\Payment;
+
 /**
  *  Include parent class definition
  */
@@ -19,6 +22,8 @@
  * @package CiviCRM
  */
 class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
+
+  public $_apiversion = 4;
 
   public function setUp(): void {
     parent::setUp();
@@ -55,7 +60,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
       ],
       'field' => [
         1 => [
-          'financial_type' => 1,
+          'financial_type' => $this->getFinancialTypeID('Donation'),
           'total_amount' => 70,
           'receive_date' => '2013-07-24',
           'payment_instrument' => 1,
@@ -63,7 +68,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
           'contribution_status_id' => 1,
         ],
         2 => [
-          'financial_type' => 1,
+          'financial_type' => $this->getFinancialTypeID('Donation'),
           'total_amount' => 30,
           'receive_date' => '2014-07-24',
           'payment_instrument' => 1,
@@ -76,7 +81,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
 
     // create random contribution to check IS NULL filter more precisely
     $nonBatchContributionID = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'total_amount' => 123,
       'receive_date' => '2014-07-24',
       'payment_instrument' => 1,
@@ -92,7 +97,11 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
     $entities = $this->callAPISuccess('EntityBatch', 'get', ['batch_id' => $this->ids['Batch']['default']]);
     $ids = [];
     foreach ($entities['values'] as $value) {
-      $ids[] = $value['entity_id'];
+      $ids[] = $this->callAPISuccessGetValue('EntityFinancialTrxn', [
+        'financial_trxn_id' => $value['entity_id'],
+        'entity_table' => 'civicrm_contribution',
+        'return' => 'entity_id',
+      ]);
     }
 
     $useCases = [
@@ -147,62 +156,52 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
   public function testCardTypeFilter(): void {
     $contactID1 = $this->individualCreate([], 1);
     $contactID2 = $this->individualCreate([], 2);
-    $Contribution1 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
-      'total_amount' => 100,
+    $contribution1 = Order::create(FALSE)->setContributionValues([
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'receive_date' => date('Ymd'),
-      'payment_instrument' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $contactID1,
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $Contribution1['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 1,
-      'total_amount' => 100,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
+    ])->addLineItem(['line_total' => 100])->execute()->single();
+    Payment::create(FALSE)
+      ->setNotificationForCompleteOrder(FALSE)
+      ->addValue('contribution_id', $contribution1['id'])
+      ->addValue('total_amount', 100)
+      ->addValue('payment_instrument_id', 1)
+      ->addValue('card_type_id', 1)
+      ->execute();
     $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'total_amount' => 150,
       'receive_date' => date('Ymd'),
       'payment_instrument' => 1,
       'contribution_status_id' => 1,
       'contact_id' => $contactID1,
     ]);
-    $Contribution3 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
-      'total_amount' => 200,
+    $contribution3 = Order::create(FALSE)->setContributionValues([
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'receive_date' => date('Ymd'),
-      'payment_instrument' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $contactID2,
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $Contribution3['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 2,
-      'total_amount' => 200,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
+    ])->addLineItem(['line_total' => 200])->execute()->single();
+    Payment::create(FALSE)
+      ->setNotificationForCompleteOrder(FALSE)
+      ->addValue('contribution_id', $contribution3['id'])
+      ->addValue('total_amount', 200)
+      ->addValue('payment_instrument_id', 1)
+      ->addValue('card_type_id', 2)
+      ->execute();
 
     $useCases = [
       // Case 1: Search for ONLY those contributions which have card type
       [
         'form_value' => ['financial_trxn_card_type_id' => 'IS NOT NULL'],
         'expected_count' => 2,
-        'expected_contribution' => [$Contribution1['id'], $Contribution3['id']],
+        'expected_contribution' => [$contribution1['id'], $contribution3['id']],
         'expected_qill' => 'Card Type Not Null',
       ],
       // Case 2: Search for ONLY those contributions which have Card Type as Visa
       [
         'form_value' => ['financial_trxn_card_type_id' => [1]],
         'expected_count' => 1,
-        'expected_contribution' => [$Contribution1['id']],
+        'expected_contribution' => [$contribution1['id']],
         'expected_qill' => 'Card Type In Visa',
       ],
       // Case 3: Search for ONLY those contributions which have Card Type as Amex
@@ -216,7 +215,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
       [
         'form_value' => ['financial_trxn_card_type_id' => [1, 2]],
         'expected_count' => 2,
-        'expected_contribution' => [$Contribution1['id'], $Contribution3['id']],
+        'expected_contribution' => [$contribution1['id'], $contribution3['id']],
         'expected_qill' => 'Card Type In Visa, MasterCard',
       ],
     ];
@@ -250,64 +249,54 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
   public function testCardNumberFilter(): void {
     $contactID1 = $this->individualCreate([], 1);
     $contactID2 = $this->individualCreate([], 2);
-    $Contribution1 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
-      'total_amount' => 100,
+    $contribution1 = Order::create(FALSE)->setContributionValues([
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'receive_date' => date('Ymd'),
-      'payment_instrument' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $contactID1,
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $Contribution1['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 1,
-      'total_amount' => 100,
-      'pan_truncation' => 1234,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
+    ])->addLineItem(['line_total' => 100])->execute()->single();
+    Payment::create(FALSE)
+      ->setNotificationForCompleteOrder(FALSE)
+      ->addValue('contribution_id', $contribution1['id'])
+      ->addValue('total_amount', 100)
+      ->addValue('payment_instrument_id', 1)
+      ->addValue('card_type_id', 1)
+      ->addValue('pan_truncation', 1234)
+      ->execute();
     $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'total_amount' => 150,
       'receive_date' => date('Ymd'),
       'payment_instrument' => 1,
       'contribution_status_id' => 1,
       'contact_id' => $contactID1,
     ]);
-    $Contribution3 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
-      'total_amount' => 200,
+    $contribution3 = Order::create(FALSE)->setContributionValues([
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'receive_date' => date('Ymd'),
-      'payment_instrument' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $contactID2,
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $Contribution3['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 2,
-      'total_amount' => 200,
-      'pan_truncation' => 5678,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
+    ])->addLineItem(['line_total' => 200])->execute()->single();
+    Payment::create(FALSE)
+      ->setNotificationForCompleteOrder(FALSE)
+      ->addValue('contribution_id', $contribution3['id'])
+      ->addValue('total_amount', 200)
+      ->addValue('payment_instrument_id', 1)
+      ->addValue('card_type_id', 2)
+      ->addValue('pan_truncation', 5678)
+      ->execute();
 
     $useCases = [
       // Case 1: Search for ONLY those contributions which have card number
       [
         'form_value' => ['financial_trxn_pan_truncation' => 'IS NOT NULL'],
         'expected_count' => 2,
-        'expected_contribution' => [$Contribution1['id'], $Contribution3['id']],
+        'expected_contribution' => [$contribution1['id'], $contribution3['id']],
         'expected_qill' => 'Card Number Not Null',
       ],
       // Case 2: Search for ONLY those contributions which have Card Number as 1234
       [
         'form_value' => ['financial_trxn_pan_truncation' => 1234],
         'expected_count' => 1,
-        'expected_contribution' => [$Contribution1['id']],
+        'expected_contribution' => [$contribution1['id']],
         'expected_qill' => 'Card Number Like %1234%',
       ],
       // Case 3: Search for ONLY those contributions which have Card Number as 8888
@@ -412,7 +401,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
     $contactID1 = $this->individualCreate([], 1);
     $contactID2 = $this->individualCreate([], 2);
     $Contribution1 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'total_amount' => 100,
       'receive_date' => date('Y-m-d'),
       'payment_instrument' => 1,
@@ -422,7 +411,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
       'contact_id' => $contactID1,
     ]);
     $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'total_amount' => 150,
       'receive_date' => date('Y-m-d', strtotime(date('Y-m-d') . ' - 1 days')),
       'payment_instrument' => 1,
@@ -432,7 +421,7 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
       'contact_id' => $contactID2,
     ]);
     $Contribution3 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'total_amount' => 200,
       'receive_date' => date('Ymd'),
       'payment_instrument' => 1,
@@ -503,47 +492,32 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
       'contribution_status_id' => 5,
       'financial_type_id' => "Donation",
     ]);
-    // Create a template contribution.
-    $TemplateContribution = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 'Donation',
-      'total_amount' => 11,
+    // Create a template contribution. This is never actually paid - it's just
+    // a stencil the recurring contribution copies for each future installment -
+    // so, unlike the real contributions below, it gets no completing Payment.
+    Order::create(FALSE)->setContributionValues([
+      'financial_type_id:name' => 'Donation',
       'receive_date' => date('Ymd'),
-      'receive_date_time' => NULL,
-      'payment_instrument_id' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $this->ids['Contact'][1],
       'contribution_recur_id' => $ContributionRecur1['id'],
       'is_template' => 1,
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $TemplateContribution['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 1,
-      'total_amount' => 11,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
-    // Create a normal contribution
-    $Contribution1 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 'Donation',
-      'total_amount' => 11,
+    ])->addLineItem(['line_total' => 11])->execute();
+    // Create a normal contribution. Order::create() always leaves a new
+    // contribution Pending - Payment::create() is what completes it and
+    // records the payment_instrument/card_type actually used to pay it.
+    $contribution1 = Order::create(FALSE)->setContributionValues([
+      'financial_type_id:name' => 'Donation',
       'receive_date' => date('Ymd'),
-      'receive_date_time' => NULL,
-      'payment_instrument_id' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $this->ids['Contact'][1],
       'contribution_recur_id' => $ContributionRecur1['id'],
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $Contribution1['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 1,
-      'total_amount' => 11,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
+    ])->addLineItem(['line_total' => 11])->execute()->single();
+    Payment::create(FALSE)
+      ->setNotificationForCompleteOrder(FALSE)
+      ->addValue('contribution_id', $contribution1['id'])
+      ->addValue('total_amount', 11)
+      ->addValue('payment_instrument_id', 1)
+      ->addValue('card_type_id', 1)
+      ->execute();
     // "Completed" recurring contribution for contactID2
     $ContributionRecur2 = $this->callAPISuccess('ContributionRecur', 'create', [
       'sequential' => 1,
@@ -559,25 +533,19 @@ class CRM_Contribute_Form_SearchTest extends CiviUnitTestCase {
       'processor_id' => 'a processor',
       'start_date' => '20180101',
     ]);
-    $Contribution2 = $this->callAPISuccess('Contribution', 'create', [
-      'financial_type_id' => 'Donation',
-      'total_amount' => 22,
+    $contribution2 = Order::create(FALSE)->setContributionValues([
+      'financial_type_id:name' => 'Donation',
       'receive_date' => '20180101',
-      'receive_date_time' => NULL,
-      'payment_instrument' => 1,
-      'contribution_status_id' => 1,
       'contact_id' => $this->ids['Contact'][2],
       'contribution_recur_id' => $ContributionRecur2['id'],
-    ]);
-    $params = [
-      'to_financial_account_id' => 1,
-      'status_id' => 1,
-      'contribution_id' => $Contribution2['id'],
-      'payment_instrument_id' => 1,
-      'card_type_id' => 1,
-      'total_amount' => 22,
-    ];
-    CRM_Core_BAO_FinancialTrxn::create($params);
+    ])->addLineItem(['line_total' => 22])->execute()->single();
+    Payment::create(FALSE)
+      ->setNotificationForCompleteOrder(FALSE)
+      ->addValue('contribution_id', $contribution2['id'])
+      ->addValue('total_amount', 22)
+      ->addValue('payment_instrument_id', 1)
+      ->addValue('card_type_id', 1)
+      ->execute();
   }
 
   /**

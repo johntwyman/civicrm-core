@@ -974,6 +974,10 @@ class CRM_Core_Form extends HTML_QuickForm_Page {
    *
    * Should be over-ridden by derived class.
    *
+   * @api This function will not change in a minor release and is supported for
+   * use outside of core. This annotation / external support for properties
+   * is only given where there is specific test cover.
+   *
    * @return string
    */
   public function getTitle() {
@@ -1289,16 +1293,7 @@ class CRM_Core_Form extends HTML_QuickForm_Page {
    * @return string
    */
   public function getTemplateFileName() {
-    // TODO: Why is this bit missing from `CRM_Core_Page::getTemplateFileName`?
-    $ext = CRM_Extension_System::singleton()->getMapper();
-    if ($ext->isExtensionClass(CRM_Utils_System::getClassName($this))) {
-      $filename = $ext->getTemplateName(CRM_Utils_System::getClassName($this));
-      $tplname = $ext->getTemplatePath(CRM_Utils_System::getClassName($this)) . DIRECTORY_SEPARATOR . $filename;
-    }
-    else {
-      $tplname = CRM_Utils_System::getTemplateForClass($this);
-    }
-    return $tplname;
+    return CRM_Utils_System::getTemplateForClass($this);
   }
 
   /**
@@ -2229,6 +2224,7 @@ class CRM_Core_Form extends HTML_QuickForm_Page {
    * @param $mainEntityId
    *   Whatever the _contactId or _entityId is set to (typically the main entity being edited by the form).
    * @return array
+   *   Array of filters keyed by field name
    */
   public static function autocompleteFilters($mainEntityId = NULL): array {
     return [];

@@ -127,8 +127,9 @@ class CRM_Utils_Check_Component_Env extends CRM_Utils_Check_Component {
       $message->addAction(
         ts('Disable Debug Mode'),
         ts('Disable debug mode now?'),
-        'api3',
-        ['Setting', 'create', ['debug_enabled' => 0]]
+        'api4',
+        ['Setting', 'set', ['values' => ['debug_enabled' => FALSE]]],
+        'fa-ban'
       );
       return [$message];
     }
@@ -754,9 +755,10 @@ class CRM_Utils_Check_Component_Env extends CRM_Utils_Check_Component {
     if (empty($setting) || empty($exts)) {
       $messages[] = new CRM_Utils_Check_Message(
         __FUNCTION__,
-        ts('None of the CiviCRM components are enabled. This is theoretically legal, but it is most likely a misconfiguration.<br/> Please inspect and re-save the <a %1>component settings</a>.', [
-          1 => sprintf('target="_blank" href="%s"', Civi::url('backend://civicrm/admin/setting/component?reset=1', 'ah')),
-        ]),
+        ts('None of the CiviCRM components are enabled. This is theoretically legal, but it is most likely a misconfiguration.') . '<br/>'
+          . ts('Please inspect and re-save the <a %1>component settings</a>.', [
+            1 => sprintf('target="_blank" href="%s"', Civi::url('backend://civicrm/admin/setting/component?reset=1', 'ah')),
+          ]),
         ts('Missing Components'),
         \Psr\Log\LogLevel::WARNING,
         'fa-server'
@@ -924,11 +926,8 @@ class CRM_Utils_Check_Component_Env extends CRM_Utils_Check_Component {
       if (version_compare($dbVersion, $codeVersion) > 0) {
         $messages[] = new CRM_Utils_Check_Message(
           __FUNCTION__,
-          ts('Your database is marked with an unexpected version number: %1. The v%2 codebase may not be compatible with your database state.
-            You will need to determine the correct version corresponding to your current database state. You may want to revert to the codebase
-            you were using until you resolve this problem.<br/>OR if this is a manual install from git, you might want to fix civicrm-version.php file.',
-              [1 => $dbVersion, 2 => $codeVersion]
-            ),
+          ts('Your database is marked with an unexpected version number: %1. The v%2 codebase may not be compatible with your database state. You will need to determine the correct version corresponding to your current database state. You may want to revert to the codebase you were using until you resolve this problem.', [1 => $dbVersion, 2 => $codeVersion])
+            . '<br/>' . ts('OR if this is a manual install from git, you might want to fix civicrm-version.php file.'),
           ts('Database In Unexpected Version'),
           \Psr\Log\LogLevel::ERROR,
           'fa-database'
@@ -1013,7 +1012,7 @@ class CRM_Utils_Check_Component_Env extends CRM_Utils_Check_Component {
     if ($environment != 'Production') {
       $messages[] = new CRM_Utils_Check_Message(
         __FUNCTION__,
-        ts('The environment of this CiviCRM instance is set to \'%1\'. Certain functionality like scheduled jobs has been disabled.', [1 => $environment]),
+        ts("The environment of this CiviCRM instance is set to '%1'. Certain functionality like scheduled jobs has been disabled.", [1 => $environment]),
         ts('Non-Production Environment'),
         \Psr\Log\LogLevel::NOTICE,
         'fa-bug'
@@ -1082,17 +1081,19 @@ class CRM_Utils_Check_Component_Env extends CRM_Utils_Check_Component {
   public function checkMysqlVersion() {
     $messages = [];
     $version = CRM_Utils_SQL::getDatabaseVersion();
+    $isMariaDB = CRM_Utils_SQL::isMariaDB();
     $minRecommendedVersion = CRM_Upgrade_Incremental_General::MIN_RECOMMENDED_MYSQL_VER;
     $mariaDbRecommendedVersion = CRM_Upgrade_Incremental_General::MIN_RECOMMENDED_MARIADB_VER;
-    $upcomingCiviChangeVersion = '5.34';
-    if (version_compare(CRM_Utils_SQL::getDatabaseVersion(), $minRecommendedVersion, '<')) {
+    if (version_compare($version, $isMariaDB ? $mariaDbRecommendedVersion : $minRecommendedVersion, '<')) {
       $messages[] = new CRM_Utils_Check_Message(
         __FUNCTION__,
-        ts('To prepare for CiviCRM v%4, please upgrade MySQL. The recommended version will be MySQL v%2 or MariaDB v%3.', [
-          1 => $version,
-          2 => $minRecommendedVersion . '+',
-          3 => $mariaDbRecommendedVersion . '+',
-          4 => $upcomingCiviChangeVersion . '+',
+        ts('This system uses %1 v%2. CiviCRM v%3 will require MySQL v%4 or MariaDB v%5.', [
+          1 => $isMariaDB ? 'MariaDB' : 'MySQL',
+          // Drop suffixes like "-MariaDB-0+deb10u2" or "-log".
+          2 => strtok($version, '-'),
+          3 => CRM_Upgrade_Incremental_General::CIVI_VER_REQUIRING_RECOMMENDED_DB . '+',
+          4 => $minRecommendedVersion . '+',
+          5 => $mariaDbRecommendedVersion . '+',
         ]),
         ts('MySQL Out-of-Date'),
         \Psr\Log\LogLevel::NOTICE,

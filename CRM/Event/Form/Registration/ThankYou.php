@@ -21,6 +21,19 @@ use Civi\Api4\PCPBlock;
  * This class generates form components for processing Event
  */
 class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
+  use CRM_Contribute_Form_ContributeFormTrait;
+
+  /**
+   * Get id of the contribution covering this registration.
+   *
+   * The trait's own stub otherwise takes precedence over the parent
+   * class's implementation, since traits are resolved before inheritance.
+   *
+   * @return int|null
+   */
+  public function getContributionID(): ?int {
+    return parent::getContributionID();
+  }
 
   /**
    * Set variables up before form is built.
@@ -31,7 +44,6 @@ class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
   public function preProcess(): void {
     parent::preProcess();
     $this->_params = $this->get('params');
-    $this->_lineItem = $this->get('lineItem');
     $finalAmount = $this->get('finalAmount');
     $this->assign('finalAmount', $finalAmount);
     $participantInfo = $this->get('participantInfo');
@@ -39,11 +51,10 @@ class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
     $this->assign('participantInfo', $participantInfo);
     $customGroup = $this->get('customProfile');
     $this->assign('customProfile', $customGroup);
-    $this->assign('individual', $this->get('individual'));
 
     CRM_Event_Form_Registration_Confirm::assignProfiles($this);
 
-    $this->setTitle($this->_values['event']['thankyou_title'] ?? NULL);
+    $this->setTitle($this->getEventValue('thankyou_title'));
   }
 
   /**
@@ -68,7 +79,7 @@ class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
    */
   public function buildQuickForm() {
     // Assign the email address from a contact id lookup as in CRM_Event_BAO_Event->sendMail()
-    $primaryContactId = $this->get('primaryContactId');
+    $primaryContactId = $this->getParticipantValue('contact_id');
     $email = NULL;
     if ($primaryContactId) {
       $email = CRM_Utils_Array::valueByRegexKey('/^email-/', current($this->_params));
@@ -84,40 +95,32 @@ class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
 
     $invoicing = \Civi::settings()->get('invoicing');
 
-    $lineItemForTemplate = [];
-    if (!empty($this->_lineItem) && is_array($this->_lineItem)) {
-      foreach ($this->_lineItem as $key => $value) {
-        if (!empty($value) && $value !== 'skip') {
-          $lineItemForTemplate[$key] = $value;
-        }
+    $totalAmount = 0;
+    if ($this->hasOrder()) {
+      $order = $this->getOrder();
+      $order->setExistingContributionID($this->getContributionID());
+      $lineItems = $order->getLineItems();
+      $totalAmount = $order->getTotalAmount();
+
+      if ($lineItems && !CRM_Core_DAO::getFieldValue('CRM_Price_DAO_PriceSet', $order->getPriceSetID(), 'is_quick_config')) {
+        $this->assign('lineItem', [$order->getPriceSetID() => $lineItems]);
+      }
+      if ($invoicing) {
+        $this->assign('taxTerm', \Civi::settings()->get('tax_term'));
+        $this->assign('totalTaxAmount', $order->getTotalTaxAmount());
       }
     }
-
-    if ($this->_priceSetId &&
-      !CRM_Core_DAO::getFieldValue('CRM_Price_DAO_PriceSet', $this->_priceSetId, 'is_quick_config') &&
-      !empty($lineItemForTemplate)
-    ) {
-      $this->assignLineItemsToTemplate($lineItemForTemplate);
-    }
-
-    if ($invoicing) {
-      $this->assign('totalTaxAmount', $this->getOrder()->getTotalTaxAmount());
-    }
-    $this->assign('totalAmount', $this->get('totalAmount'));
+    $this->assign('totalAmount', $totalAmount);
 
     $hookDiscount = $this->get('hookDiscount');
     if ($hookDiscount) {
       $this->assign('hookDiscount', $hookDiscount);
     }
 
-    $this->assign('receive_date', $this->get('receiveDate'));
-    $this->assign('trxn_id', $this->get('trxnId'));
-    $this->assign('isAmountzero', $this->get('totalAmount') <= 0);
+    $this->assign('receive_date', $this->getContributionValue('contribution_status_id:name') === 'Completed' ? $this->getContributionValue('receive_date') : NULL);
+    $this->assign('trxn_id', $this->getContributionValue('trxn_id'));
+    $this->assign('isAmountzero', $totalAmount <= 0);
 
-    $this->assign('defaultRole', FALSE);
-    if (($this->_params[0]['defaultRole'] ?? NULL) == 1) {
-      $this->assign('defaultRole', TRUE);
-    }
     $defaults = [];
     $fields = [];
     if (!empty($this->_fields)) {
@@ -146,14 +149,13 @@ class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
     $this->_submitValues = array_merge($this->_submitValues, $defaults);
     $this->setDefaults($defaults);
 
-    $params['entity_id'] = $this->_eventId;
-    $params['entity_table'] = 'civicrm_event';
-
     $data = [];
     $extensionHtml = [];
 
     if (function_exists('tellafriend_civicrm_config')) {
       // @todo - move this to tellafriend extension
+      $params['entity_id'] = $this->getEventID();
+      $params['entity_table'] = 'civicrm_event';
       CRM_Friend_BAO_Friend::retrieve($params, $data);
       if (!empty($data['is_active'])) {
         $friendText = $data['title'];
@@ -196,7 +198,12 @@ class CRM_Event_Form_Registration_ThankYou extends CRM_Event_Form_Registration {
     $this->assign('pricesetFieldsCount', CRM_Price_BAO_PriceSet::getPricesetCount($this->_priceSetId));
 
     // can we blow away the session now to prevent hackery
+    $contributionID = $this->getContributionID();
     $this->controller->reset();
+    // Re-establish this for unit tests - in the future we hope
+    // to NOT blow away everything but to keep a few safe values to allow
+    // the thank you page to be refreshed.
+    $this->controller->set('contributionID', $contributionID);
   }
 
   /**

@@ -9,6 +9,7 @@
  +--------------------------------------------------------------------+
  */
 
+use Civi\Api4\Address;
 use Civi\Api4\Relationship;
 
 /**
@@ -27,6 +28,8 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
   }
 
   public function tearDown(): void {
+    \CRM_Utils_Hook::singleton()->reset();
+    \CRM_Core_Config::singleton()->userPermissionClass->permissions = NULL;
     \Civi::settings()->set('pinnedContactCountries', []);
     CRM_Core_I18n::singleton()->setLocale('en_US');
     parent::tearDown();
@@ -50,7 +53,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '18.219023',
       'geo_code_2' => '-105.00973',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
     ];
@@ -79,7 +82,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '18.219023',
       'geo_code_2' => '-105.00973',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
     ];
@@ -114,7 +117,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '31.694842',
       'geo_code_2' => '-106.29998',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
       'contact_id' => $contactId,
@@ -159,7 +162,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '31.694842',
       'geo_code_2' => '-106.29998',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '1',
       'contact_id' => $contactId,
@@ -175,7 +178,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '18.219023',
       'geo_code_2' => '-105.00973',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '1',
       'contact_id' => $contactId,
@@ -219,7 +222,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '31.694842',
       'geo_code_2' => '-106.29998',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '1',
       'contact_id' => $contactId,
@@ -240,7 +243,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '18.219023',
       'geo_code_2' => '-105.00973',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '1',
       'contact_id' => $contactId,
@@ -286,7 +289,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '31.694842',
       'geo_code_2' => '-106.29998',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
       'contact_id' => $contactId,
@@ -310,7 +313,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '44.553719',
       'geo_code_2' => '-90.61457',
-      'location_type_id' => '2',
+      'location_type_id' => $this->getLocationTypeID('Work'),
       'is_primary' => '',
       'is_billing' => '1',
       'contact_id' => $contactId,
@@ -348,7 +351,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '31.694842',
       'geo_code_2' => '-106.29998',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
       'contact_id' => $contactId,
@@ -388,7 +391,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '18.219023',
       'geo_code_2' => '-105.00973',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
     ];
@@ -452,7 +455,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $contactId,
       'street_address' => $street_address,
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ];
 
     $result = civicrm_api3('Address', 'create', $params);
@@ -595,7 +598,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsA = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdA,
     ];
@@ -603,7 +606,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsB = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addAddressA->id,
       'contact_id' => $contactIdB,
@@ -612,7 +615,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsC = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addAddressB->id,
       'contact_id' => $contactIdC,
@@ -622,7 +625,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     $updatedAddressParamsA = [
       'id' => $addAddressA->id,
       'street_address' => '1313 New Address Lane',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdA,
     ];
@@ -655,7 +658,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsA = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdA,
     ];
@@ -663,7 +666,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsB = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdB,
     ];
@@ -671,7 +674,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsC = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addAddressA->id,
       'contact_id' => $contactIdC,
@@ -681,7 +684,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     $updatedAddressParamsA = [
       'id' => $addAddressA->id,
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addAddressB->id,
       'contact_id' => $contactIdA,
@@ -691,7 +694,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     $updatedAddressParamsB = [
       'id' => $addAddressB->id,
       'street_address' => '1313 New Address Lane',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdB,
     ];
@@ -719,7 +722,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsA = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdA,
     ];
@@ -728,7 +731,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     $updatedAddressParamsA = [
       'id' => $addAddressA->id,
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addAddressA->id,
       'contact_id' => $contactIdA,
@@ -761,7 +764,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $householdAddressId = $this->createTestEntity('Address', [
       'street_address' => '123 Fake St.',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => 1,
       'contact_id' => $householdId,
     ], 'household')['id'];
@@ -770,7 +773,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     // active 'Household Member of' relationship.
     $this->createTestEntity('Address', [
       'street_address' => '123 Fake St.',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => 1,
       'master_id' => $householdAddressId,
       'contact_id' => $memberId,
@@ -818,7 +821,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsA = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdA,
     ];
@@ -830,7 +833,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsB = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addressA['id'],
       'contact_id' => $contactIdB,
@@ -921,7 +924,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $addressParamsA = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'contact_id' => $contactIdA,
       $customField => 'this is a custom text field',
@@ -933,7 +936,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
     // without having the custom field, we should still copy the values from master
     $addressParamsB = [
       'street_address' => '123 Fake St.',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'master_id' => $addAddressA->id,
       'contact_id' => $contactIdB,
@@ -1076,7 +1079,7 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
       'country_id' => '1228',
       'geo_code_1' => '41.701308979563',
       'geo_code_2' => '-73.91941868639',
-      'location_type_id' => '1',
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'is_primary' => '1',
       'is_billing' => '0',
       'contact_id' => $contactId,
@@ -1091,6 +1094,161 @@ class CRM_Core_BAO_AddressTest extends CiviUnitTestCase {
 
     $this->assertEquals('41.70130897956', $addAddress->geo_code_1, 'In line' . __LINE__);
     $this->assertEquals('-73.9194186863', $addAddress->geo_code_2, 'In line' . __LINE__);
+  }
+
+  /**
+   * Submitting another contact's address id must not reassign that address.
+   */
+  public function testLegacyCreateCannotTakeOtherContactsAddress(): void {
+    $userContactId = $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'User'], 'user')['id'];
+    $victimContactId = $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Victim'], 'victim')['id'];
+    $victimAddressId = $this->createTestEntity('Address', [
+      'contact_id' => $victimContactId,
+      'location_type_id' => 1,
+      'street_address' => 'Victim Street',
+    ])['id'];
+
+    $addresses = CRM_Core_BAO_Address::legacyCreate([
+      'contact_id' => $userContactId,
+      'address' => [
+        1 => [
+          'id' => $victimAddressId,
+          'location_type_id' => 1,
+          'street_address' => 'User Street',
+        ],
+      ],
+    ], TRUE);
+
+    $this->assertNotEquals($victimAddressId, $addresses[0]->id);
+    $victimAddress = Address::get(FALSE)
+      ->addWhere('id', '=', $victimAddressId)
+      ->execute()->single();
+    $this->assertEquals($victimContactId, $victimAddress['contact_id']);
+    $this->assertEquals('Victim Street', $victimAddress['street_address']);
+    $userAddress = Address::get(FALSE)
+      ->addWhere('contact_id', '=', $userContactId)
+      ->execute()->single();
+    $this->assertEquals('User Street', $userAddress['street_address']);
+  }
+
+  /**
+   * Submitting another contact's address id with blank data must not delete that address.
+   */
+  public function testLegacyCreateCannotDeleteOtherContactsAddress(): void {
+    $userContactId = $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'User'], 'user')['id'];
+    $victimContactId = $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Victim'], 'victim')['id'];
+    $victimAddressId = $this->createTestEntity('Address', [
+      'contact_id' => $victimContactId,
+      'location_type_id' => 1,
+      'street_address' => 'Victim Street',
+    ])['id'];
+
+    CRM_Core_BAO_Address::legacyCreate([
+      'contact_id' => $userContactId,
+      'updateBlankLocInfo' => TRUE,
+      'address' => [
+        1 => [
+          'id' => $victimAddressId,
+          'street_address' => '',
+        ],
+      ],
+    ], TRUE);
+
+    $this->assertCount(1, Address::get(FALSE)
+      ->addWhere('id', '=', $victimAddressId)
+      ->addWhere('contact_id', '=', $victimContactId)
+      ->execute());
+  }
+
+  /**
+   * Updating a shared child address must not overwrite upstream master address if user lacks permission.
+   */
+  public function testSharedAddressCannotOverwriteUpstreamWithoutPermission(): void {
+    $userContact = $this->createLoggedInUser();
+
+    $orgContact = $this->createTestEntity('Contact', [
+      'contact_type' => 'Organization',
+      'organization_name' => 'HQ Org',
+    ], 'hq_org');
+
+    $masterAddress = $this->createTestEntity('Address', [
+      'contact_id' => $orgContact['id'],
+      'location_type_id' => 1,
+      'street_address' => '100 Main St',
+      'city' => 'Metropolis',
+    ], 'master_address');
+
+    $childAddress = $this->createTestEntity('Address', [
+      'contact_id' => $userContact,
+      'location_type_id' => 1,
+      'master_id' => $masterAddress['id'],
+      'street_address' => '100 Main St',
+      'city' => 'Metropolis',
+    ], 'child_address');
+
+    \CRM_Core_Config::singleton()->userPermissionClass->permissions = [
+      'access CiviCRM',
+      'edit my contact',
+      'view my contact',
+      'view all contacts',
+    ];
+
+    // Attempt to update child address with modified street address and check_permissions
+    try {
+      CRM_Core_BAO_Address::writeRecord([
+        'id' => $childAddress['id'],
+        'contact_id' => $userContact,
+        'street_address' => '999 Hacked Way',
+        'master_id' => $masterAddress['id'],
+        'check_permissions' => TRUE,
+      ]);
+      $this->fail('Expected exception when modifying shared address without edit permission on master contact.');
+    }
+    catch (\Civi\API\Exception\UnauthorizedException $e) {
+      $this->assertStringContainsString('Permission denied to modify shared upstream address', $e->getMessage());
+    }
+
+    // Verify upstream address was NOT overwritten
+    $upstream = Address::get(FALSE)
+      ->addWhere('id', '=', $masterAddress['id'])
+      ->execute()->single();
+    $this->assertEquals('100 Main St', $upstream['street_address']);
+  }
+
+  /**
+   * Creating a shared child address must never overwrite upstream master address.
+   */
+  public function testSharedAddressCreateCannotOverwriteUpstream(): void {
+    $orgContact = $this->createTestEntity('Contact', [
+      'contact_type' => 'Organization',
+      'organization_name' => 'HQ Org 2',
+    ], 'hq_org_2');
+
+    $masterAddress = $this->createTestEntity('Address', [
+      'contact_id' => $orgContact['id'],
+      'location_type_id' => 1,
+      'street_address' => '500 Original St',
+      'city' => 'Gotham',
+    ], 'master_address_2');
+
+    $userContact = $this->createTestEntity('Contact', [
+      'contact_type' => 'Individual',
+      'first_name' => 'Employee',
+    ], 'employee_contact');
+
+    CRM_Core_BAO_Address::writeRecord([
+      'contact_id' => $userContact['id'],
+      'location_type_id' => 1,
+      'master_id' => $masterAddress['id'],
+      'street_address' => 'Overwritten St',
+      'city' => 'Gotham',
+    ]);
+
+    // Upstream address should still have 500 Original St
+    $upstream = Address::get(FALSE)
+      ->addWhere('id', '=', $masterAddress['id'])
+      ->execute()->single();
+    $this->assertEquals('500 Original St', $upstream['street_address']);
   }
 
 }

@@ -40,8 +40,7 @@ class api_v3_SavedSearchTest extends CiviUnitTestCase {
     $this->params = [
       'expires_date' => '2021-08-08',
       'form_values' => [
-        // Is volunteer for
-        'relation_type_id' => '6_a_b',
+        'relation_type_id' => $this->getRelationshipTypeID('Volunteer for') . '_a_b',
         'relation_target_name' => 'Default Organization',
       ],
     ];
@@ -153,8 +152,7 @@ class api_v3_SavedSearchTest extends CiviUnitTestCase {
         'contact_id_a' => '$value.id',
         // default organization:
         'contact_id_b' => 1,
-        // volunteer relationship:
-        'relationship_type_id' => 6,
+        'relationship_type_id' => $this->getRelationshipTypeID('Volunteer for'),
         'is_active' => 1,
       ],
     ]);
@@ -173,6 +171,44 @@ class api_v3_SavedSearchTest extends CiviUnitTestCase {
       'is_reserved' => 0,
     ];
     return [$contact_id, $params];
+  }
+
+  public function tearDown(): void {
+    \CRM_Core_Config::singleton()->userPermissionClass->permissions = NULL;
+    parent::tearDown();
+  }
+
+  /**
+   * Test that a user with 'manage own search_kit' cannot steal another user's saved search using APIv3.
+   */
+  public function testCannotStealSavedSearchWithCheckPermissions(): void {
+    $this->hookClass->setHook('civicrm_alterAPIPermissions', function($entity, $action, &$params, &$permissions) {
+      if ($entity === 'saved_search') {
+        $permissions['saved_search']['default'] = ['access CiviCRM'];
+      }
+    });
+
+    $userContact = $this->individualCreate(['first_name' => 'User'], 'user');
+    $otherContact = $this->individualCreate(['first_name' => 'Other'], 'other');
+
+    $otherSearch = $this->callAPISuccess('SavedSearch', 'create', [
+      'name' => 'victim_search_v3',
+      'created_id' => $otherContact,
+      'form_values' => ['dummy' => 1],
+    ])['id'];
+
+    CRM_Core_Session::singleton()->set('userID', $userContact);
+    CRM_Core_Config::singleton()->userPermissionClass->permissions = [
+      'access CiviCRM',
+      'manage own search_kit',
+    ];
+
+    $this->callAPIFailure('SavedSearch', 'create', [
+      'id' => $otherSearch,
+      'created_id' => $userContact,
+      'form_values' => ['dummy' => 2],
+      'check_permissions' => 1,
+    ]);
   }
 
 }

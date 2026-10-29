@@ -32,10 +32,7 @@ use Civi\Api4\RelationshipCache;
  */
 class BasicCustomFieldTest extends Api4TestBase {
 
-  public function setUp(): void {
-    \CRM_Core_BAO_ConfigSetting::enableAllComponents();
-    parent::setUp();
-  }
+  protected ?array $enableComponents = ['*'];
 
   /**
    * @throws \CRM_Core_Exception
@@ -323,7 +320,7 @@ class BasicCustomFieldTest extends Api4TestBase {
     $this->createTestRecord('Relationship', [
       'contact_id_a' => $parent,
       'contact_id_b' => $child,
-      'relationship_type_id' => 1,
+      'relationship_type_id:name' => 'Child of',
       "$cgName.PetName" => 'Buddy',
     ]);
 
@@ -336,12 +333,14 @@ class BasicCustomFieldTest extends Api4TestBase {
     $this->assertCount(2, $results);
     $this->assertEquals('Buddy', $results[0]["$cgName.PetName"]);
 
+    $childOfID = $this->getRelationshipTypeID('Child of');
+
     // Test get via bridge INNER join
     $result = Contact::get(FALSE)
       ->addSelect('relative.display_name', "relative.$cgName.PetName")
       ->addJoin('Contact AS relative', 'INNER', 'RelationshipCache')
       ->addWhere('id', '=', $parent)
-      ->addWhere('relative.relationship_type_id', '=', 1)
+      ->addWhere('relative.relationship_type_id', '=', $childOfID)
       ->execute()->single();
     $this->assertEquals('Child Tester', $result['relative.display_name']);
     $this->assertEquals('Buddy', $result["relative.$cgName.PetName"]);
@@ -351,7 +350,7 @@ class BasicCustomFieldTest extends Api4TestBase {
       ->addSelect('relative.display_name', "relative.$cgName.PetName")
       ->addJoin('Contact AS relative', 'LEFT', 'RelationshipCache')
       ->addWhere('id', '=', $parent)
-      ->addWhere('relative.relationship_type_id', '=', 1)
+      ->addWhere('relative.relationship_type_id', '=', $childOfID)
       ->execute()->single();
     $this->assertEquals('Child Tester', $result['relative.display_name']);
     $this->assertEquals('Buddy', $result["relative.$cgName.PetName"]);
@@ -387,7 +386,7 @@ class BasicCustomFieldTest extends Api4TestBase {
     $this->createTestRecord('Relationship', [
       'contact_id_a' => $parent,
       'contact_id_b' => $child,
-      'relationship_type_id' => 1,
+      'relationship_type_id:name' => 'Child of',
     ]);
 
     $results = Contact::get(FALSE)

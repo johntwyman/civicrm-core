@@ -9,6 +9,7 @@
  +--------------------------------------------------------------------+
  */
 
+use Civi\Api4\Contribution;
 use Civi\Api4\Country;
 use Civi\Api4\StateProvince;
 
@@ -59,6 +60,13 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
   protected $paymentInstruments = [];
 
   /**
+   * Parameters the payment processor received.
+   *
+   * @var array
+   */
+  protected $paymentProcessorParams = [];
+
+  /**
    * Dummy payment processor.
    *
    * @var CRM_Core_Payment_Dummy
@@ -86,7 +94,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
       'total_amount' => 100,
       'currency' => 'USD',
       'contact_id' => $this->_individualId,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $this->_processorParams = [
       'domain_id' => 1,
@@ -144,6 +152,29 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
       'Visa',
       '***********1111',
     ]);
+  }
+
+  /**
+   * A credit card payment passes the contribution ID and source to the processor.
+   */
+  public function testCreditCardPaymentPassesContributionDetails(): void {
+    $this->createPartiallyPaidOrder();
+    Contribution::update(FALSE)
+      ->addWhere('id', '=', $this->_contributionId)
+      ->addValue('source', 'Annual gala')
+      ->execute();
+    $this->hookClass->setHook('civicrm_alterPaymentProcessorParams', [$this, 'hook_civicrm_alterPaymentProcessorParams']);
+
+    $this->submitPayment(70, 'live');
+    $this->assertEquals($this->_contributionId, $this->paymentProcessorParams['contributionID']);
+    $this->assertEquals('Annual gala', $this->paymentProcessorParams['description']);
+  }
+
+  /**
+   * Record the parameters the payment processor receives.
+   */
+  public function hook_civicrm_alterPaymentProcessorParams($paymentObj, array &$rawParams, $cookedParams): void {
+    $this->paymentProcessorParams = $rawParams;
   }
 
   /**
@@ -354,13 +385,13 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function submitPayment(float $amount, ?string $mode = NULL, bool $isEmailReceipt = FALSE): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $submitParams = [
       'contact_id' => $this->ids['Contact']['order'] ?? $this->_individualId,
       'total_amount' => $amount,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'trxn_date' => '2017-04-11 13:05:11',
-      'payment_processor_id' => 0,
       'is_email_receipt' => $isEmailReceipt,
       'from_email_address' => 'site@something.com',
     ];
@@ -374,18 +405,19 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
       $submitParams += [
         'payment_instrument_id' => array_search('Credit Card', $this->paymentInstruments, TRUE),
         'payment_processor_id' => $this->paymentProcessorID,
-        'credit_card_exp_date' => ['M' => 5, 'Y' => 2025],
+        'credit_card_exp_date' => ['M' => 5, 'Y' => (int) date('Y') + 1],
         'credit_card_number' => '411111111111111',
         'cvv2' => 234,
         'credit_card_type' => 'Visa',
-        'billing_city-5' => 'Vancouver',
-        'billing_state_province_id-5' => $stateProvinceID['id'],
-        'billing_postal_code-5' => 1321312,
-        'billing_country_id-5' => Country::get()->addWhere('name', '=', 'Canada')->execute()->first()['id'],
+        "billing_city-$billingLocationTypeID" => 'Vancouver',
+        "billing_state_province_id-$billingLocationTypeID" => $stateProvinceID['id'],
+        "billing_postal_code-$billingLocationTypeID" => 1321312,
+        "billing_country_id-$billingLocationTypeID" => Country::get()->addWhere('name', '=', 'Canada')->execute()->first()['id'],
       ];
     }
     else {
       $submitParams += [
+        'payment_processor_id' => 0,
         'payment_instrument_id' => array_search('Check', $this->paymentInstruments, TRUE),
         'check_number' => 'check-12345',
       ];

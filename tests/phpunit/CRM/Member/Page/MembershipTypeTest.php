@@ -27,12 +27,12 @@ class CRM_Member_Page_MembershipTypeTest extends CiviUnitTestCase {
     $assigned = CRM_Core_Smarty::singleton()->getTemplateVars();
     $this->assertEquals([
       $id => [
-        'id' => '1',
+        'id' => $id,
         'domain_id' => '1',
         'title' => 'General',
         'frontend_title' => 'General',
-        'member_of_contact_id' => '3',
-        'financial_type_id' => '2',
+        'member_of_contact_id' => $this->setupIDs['contact'],
+        'financial_type_id' => (string) $this->getFinancialTypeID('Member Dues'),
         'minimum_fee' => 0.0,
         'duration_unit' => 'year',
         'duration_interval' => '1',

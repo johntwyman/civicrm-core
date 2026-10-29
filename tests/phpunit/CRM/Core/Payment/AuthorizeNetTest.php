@@ -60,6 +60,7 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
    * Test works but not both due to some form of caching going on in the SmartySingleton
    */
   public function testCreateSingleNowDated(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $this->isRecur = TRUE;
     $this->setupMockHandler();
     $firstName = 'John';
@@ -117,10 +118,10 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
       'source' => 'Mordor',
       'soft_credit_to' => '',
       'soft_contact_id' => '',
-      'billing_state_province-5' => 'IL',
-      'state_province-5' => 'IL',
-      'billing_country-5' => 'US',
-      'country-5' => 'US',
+      "billing_state_province-$billingLocationTypeID" => 'IL',
+      "state_province-$billingLocationTypeID" => 'IL',
+      "billing_country-$billingLocationTypeID" => 'US',
+      "country-$billingLocationTypeID" => 'US',
       'year' => 2025,
       'month' => 9,
       'ip_address' => '127.0.0.1',
@@ -156,7 +157,7 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
     Civi::settings()->set('verifySSL', '0');
     $this->processor->doPayment($params);
     // turn verifySSL on
-    Civi::settings()->set('verifySSL', '0');
+    Civi::settings()->set('verifySSL', '1');
 
     // if subscription was successful, processor_id / subscription-id must not be null
     $this->assertDBNotNull('CRM_Contribute_DAO_ContributionRecur', $recur['id'], 'processor_id',
@@ -164,21 +165,20 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
     );
 
     $requests = $this->getRequestBodies();
-    $this->assertEquals($this->getExpectedRequest($contactId, date('Y-m-d')), $requests[0]);
+    $this->assertEquals($this->getExpectedRequest($contactId, $contribution['id'], date('Y-m-d')), $requests[0]);
     $header = $this->getRequestHeaders()[0];
     $this->assertEquals(['apitest.authorize.net'], $header['Host']);
     $this->assertEquals(['text/xml; charset=UTF8'], $header['Content-Type']);
 
-    $this->assertEquals([
-      CURLOPT_RETURNTRANSFER => TRUE,
-      CURLOPT_SSL_VERIFYPEER => Civi::settings()->get('verifySSL'),
-    ], $this->container[0]['options']['curl']);
+    $this->assertFalse($this->container[0]['options']['verify']);
+    $this->assertArrayNotHasKey('curl', $this->container[0]['options']);
   }
 
   /**
    * Create a single post dated payment as a recurring transaction.
    */
   public function testCreateSinglePostDated(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $this->isRecur = TRUE;
     $this->setupMockHandler();
     $start_date = date('Ymd', strtotime('+ 1 week'));
@@ -209,7 +209,7 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
 
     $contributionParams = [
       'contact_id' => $contactId,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'receive_date' => $start_date,
       'total_amount' => $amount,
       'invoice_id' => $invoiceID,
@@ -226,11 +226,11 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
       'billing_first_name' => $firstName,
       'billing_middle_name' => '',
       'billing_last_name' => $lastName,
-      'billing_street_address-5' => '8 Hobbitton Road',
-      'billing_city-5' => 'The Shire',
-      'billing_state_province_id-5' => 1012,
-      'billing_postal_code-5' => 5010,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '8 Hobbitton Road',
+      "billing_city-$billingLocationTypeID" => 'The Shire',
+      "billing_state_province_id-$billingLocationTypeID" => 1012,
+      "billing_postal_code-$billingLocationTypeID" => 5010,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'credit_card_number' => '4007000000027',
       'cvv2' => 123,
       'credit_card_exp_date' => [
@@ -242,7 +242,7 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
       'frequency_interval' => 1,
       'frequency_unit' => 'month',
       'installments' => 3,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_email_receipt' => 1,
       'from_email_address' => "{$firstName}.{$lastName}@example.com",
       'receive_date' => $start_date,
@@ -254,10 +254,10 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
       'source' => 'Mordor',
       'soft_credit_to' => '',
       'soft_contact_id' => '',
-      'billing_state_province-5' => 'IL',
-      'state_province-5' => 'IL',
-      'billing_country-5' => 'US',
-      'country-5' => 'US',
+      "billing_state_province-$billingLocationTypeID" => 'IL',
+      "state_province-$billingLocationTypeID" => 'IL',
+      "billing_country-$billingLocationTypeID" => 'US',
+      "country-$billingLocationTypeID" => 'US',
       'year' => 2022,
       'month' => 10,
       'ip_address' => '127.0.0.1',
@@ -305,13 +305,14 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
     $response = $this->getResponseBodies();
     $this->assertEquals($this->getExpectedRecurResponse(), $response[0], 3);
     $requests = $this->getRequestBodies();
-    $this->assertEquals($this->getExpectedRequest($contactId, date('Y-m-d', strtotime($start_date)), 70.23, 3, 4007000000027, '2022-10'), $requests[0]);
+    $this->assertEquals($this->getExpectedRequest($contactId, $contribution['id'], date('Y-m-d', strtotime($start_date)), 70.23, 3, 4007000000027, '2022-10'), $requests[0]);
   }
 
   /**
    * Get the content that we expect to see sent out.
    *
    * @param int $contactID
+   * @param int $contributionID
    * @param string $startDate
    *
    * @param int $amount
@@ -321,7 +322,7 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
    *
    * @return string
    */
-  public function getExpectedRequest($contactID, $startDate, $amount = 7, $occurrences = 12, $cardNumber = 4444333322221111, $cardExpiry = '2025-09') {
+  public function getExpectedRequest($contactID, $contributionID, $startDate, $amount = 7, $occurrences = 12, $cardNumber = 4444333322221111, $cardExpiry = '2025-09') {
     return '<?xml version="1.0" encoding="utf-8"?>
 <ARBCreateSubscriptionRequest xmlns="AnetApi/xml/v1/schema/AnetApiSchema.xsd">
   <merchantAuthentication>
@@ -346,7 +347,7 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
       </creditCard>
     </payment>
       <order>
-     <invoiceNumber>1</invoiceNumber>
+     <invoiceNumber>' . $contributionID . '</invoiceNumber>
         </order>
        <customer>
       <id>' . $contactID . '</id>
@@ -372,15 +373,16 @@ class CRM_Core_Payment_AuthorizeNetTest extends CiviUnitTestCase {
    * @return array
    */
   protected function getBillingParams(): array {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     return [
       'billing_first_name' => 'John',
       'billing_middle_name' => '',
       'billing_last_name' => "O'Connor",
-      'billing_street_address-5' => '8 Hobbitton Road',
-      'billing_city-5' => 'The Shire',
-      'billing_state_province_id-5' => 1012,
-      'billing_postal_code-5' => 5010,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '8 Hobbitton Road',
+      "billing_city-$billingLocationTypeID" => 'The Shire',
+      "billing_state_province_id-$billingLocationTypeID" => 1012,
+      "billing_postal_code-$billingLocationTypeID" => 5010,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'credit_card_number' => '4444333322221111',
       'cvv2' => 123,
       'credit_card_exp_date' => [

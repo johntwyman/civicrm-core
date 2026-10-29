@@ -17,6 +17,8 @@
  * @group headless
  */
 class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
+  use \Civi\Test\ACLPermissionTrait;
+
   protected $_apiversion = 3;
 
   /**
@@ -126,7 +128,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
     // create contribution w/o fee
     $contributionID = $this->contributionCreate([
       'contact_id' => $this->contactID,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'payment_instrument_id' => 4,
       'fee_amount' => 0,
       'net_amount' => 100,
@@ -158,7 +160,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
       'contact_id' => $this->contactID,
       'contribution_page_id' => $contributionPage['id'],
       'payment_processor' => $pageParams['processor_id'],
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $contributionID = $this->contributionCreate($contributionParams);
 
@@ -189,7 +191,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
       'contribution_page_id' => $contributionPage['id'],
       'contribution_status_id' => 2,
       'is_pay_later' => 1,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $contributionID = $this->contributionCreate($contributionParams);
 
@@ -255,7 +257,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
    */
   public function _checkFinancialRecords($params, $context): void {
     $entityParams = [
-      'entity_id' => $params['id'],
+      'entity_id' => $params['contribution_id'],
       'entity_table' => 'civicrm_contribution',
     ];
     $trxn = current($this->retrieveEntityFinancialTrxn($entityParams));
@@ -266,7 +268,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
     switch ($context) {
       case 'online':
         $compareParams = [
-          'to_financial_account_id' => 12,
+          'to_financial_account_id' => $this->getFinancialAccountID('Payment Processor Account'),
           'total_amount' => 100,
           'status_id' => 1,
         ];
@@ -274,7 +276,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
 
       case 'offline':
         $compareParams = [
-          'to_financial_account_id' => 6,
+          'to_financial_account_id' => $this->getFinancialAccountID('Deposit Bank Account'),
           'total_amount' => 100,
           'status_id' => 1,
         ];
@@ -282,7 +284,7 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
 
       case 'payLater':
         $compareParams = [
-          'to_financial_account_id' => 7,
+          'to_financial_account_id' => $this->getFinancialAccountID('Accounts Receivable'),
           'total_amount' => 100,
           'status_id' => 2,
         ];
@@ -302,14 +304,14 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
       $compareParams = [
         'amount' => 100,
         'status_id' => 1,
-        'financial_account_id' => 1,
+        'financial_account_id' => $this->getFinancialAccountID('Donation'),
       ];
     }
     elseif ($context === 'payLater') {
       $compareParams = [
         'amount' => 100,
         'status_id' => 3,
-        'financial_account_id' => 1,
+        'financial_account_id' => $this->getFinancialAccountID('Donation'),
       ];
     }
     $this->assertDBCompareValues('CRM_Financial_DAO_FinancialItem', $financialItemParams, $compareParams);
@@ -335,6 +337,71 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
     $this->checkArrayEquals($expectedParticipants, $participants);
     //delete created contribution
     $this->contributionDelete($contributionID);
+  }
+
+  /**
+   * Test row-level ACL for ParticipantPayment under contact-level ACLs.
+   */
+  public function testParticipantPaymentRowAcl(): void {
+    // 1. Create contacts: contact 0 (disallowed) and contact 1 (allowed)
+    $disallowedContactId = $this->individualCreate();
+    $allowedContactId = $this->individualCreate();
+
+    // 2. Setup ACL: only allowedContactId is permitted
+    $this->allowedContactId = $allowedContactId;
+    CRM_Core_Config::singleton()->userPermissionClass->permissions = [
+      'access CiviCRM',
+      'view debug output',
+      'access CiviEvent',
+      'view event participants',
+      'access CiviContribute',
+    ];
+    $this->hookClass->setHook('civicrm_aclWhereClause', [$this, 'aclWhereOnlyOne']);
+
+    // Create contributions
+    $disallowedContributionId = $this->contributionCreate([
+      'contact_id' => $disallowedContactId,
+      'financial_type_id' => 1,
+      'total_amount' => 50,
+    ]);
+    $allowedContributionId = $this->contributionCreate([
+      'contact_id' => $allowedContactId,
+      'financial_type_id' => 1,
+      'total_amount' => 50,
+    ]);
+
+    // Create events & participants
+    $eventId = $this->getEventID();
+    $disallowedParticipantId = $this->participantCreate([
+      'contact_id' => $disallowedContactId,
+      'event_id' => $eventId,
+    ]);
+    $allowedParticipantId = $this->participantCreate([
+      'contact_id' => $allowedContactId,
+      'event_id' => $eventId,
+    ]);
+
+    // Create ParticipantPayments
+    $disallowedParticipantPayment = $this->callAPISuccess('ParticipantPayment', 'create', [
+      'participant_id' => $disallowedParticipantId,
+      'contribution_id' => $disallowedContributionId,
+    ]);
+    $disallowedParticipantPaymentId = $disallowedParticipantPayment['id'];
+
+    $allowedParticipantPayment = $this->callAPISuccess('ParticipantPayment', 'create', [
+      'participant_id' => $allowedParticipantId,
+      'contribution_id' => $allowedContributionId,
+    ]);
+    $allowedParticipantPaymentId = $allowedParticipantPayment['id'];
+
+    // Retrieve ParticipantPayments under ACL
+    $participantPayments = $this->callAPISuccess('ParticipantPayment', 'get', [
+      'check_permissions' => TRUE,
+    ]);
+    $participantPaymentIds = array_keys($participantPayments['values']);
+
+    $this->assertNotContains($disallowedParticipantPaymentId, $participantPaymentIds);
+    $this->assertContains($allowedParticipantPaymentId, $participantPaymentIds);
   }
 
 }

@@ -70,8 +70,8 @@ class CRM_Core_MenuTest extends CiviUnitTestCase {
    * stored and loaded.
    */
   public function testModuleData(): void {
-    CRM_Core_Menu::clear();
-    $item = CRM_Core_Menu::get('civicrm/case');
+    \Civi::router()->clear();
+    $item = \Civi::router()->get('civicrm/case');
     $this->assertFalse(isset($item['ids_arguments']['exceptions']));
     $this->assertFalse(isset($item['whimsy']));
 
@@ -80,10 +80,35 @@ class CRM_Core_MenuTest extends CiviUnitTestCase {
       $items['civicrm/case']['whimsy'] = 'godliness';
     });
 
-    CRM_Core_Menu::clear();
-    $item = CRM_Core_Menu::get('civicrm/case');
+    \Civi::router()->clear();
+    $item = \Civi::router()->get('civicrm/case');
     $this->assertTrue(in_array('foobar', $item['ids_arguments']['exceptions']));
     $this->assertEquals('godliness', $item['whimsy']);
+  }
+
+  /**
+   * A PHP error while building one menu item skips that item, not the whole route table.
+   */
+  public function testBuildSkipsItemWithError(): void {
+    CRM_Utils_Hook::singleton()->setHook('civicrm_alterMenu', function(&$items) {
+      // An array 'component' makes the component lookup throw a TypeError.
+      $items['civicrm/menutest-broken'] = $items['civicrm/dashboard'];
+      $items['civicrm/menutest-broken']['component'] = ['CiviContribute'];
+    });
+
+    \Civi::router()->clear();
+    $item = \Civi::router()->get('civicrm/dashboard');
+    $this->assertEquals('civicrm/dashboard', $item['path']);
+    $this->assertEquals('CRM_Contact_Page_DashBoard', $item['page_callback']);
+  }
+
+  /**
+   * Check that null database fields (such as 'title' for routes without explicit title)
+   * are omitted from the route array rather than set to empty string.
+   */
+  public function testNullValuesOmittedFromRoute(): void {
+    $item = CRM_Core_Menu::get('civicrm/search');
+    $this->assertArrayNotHasKey('title', $item);
   }
 
   /**
@@ -180,6 +205,25 @@ class CRM_Core_MenuTest extends CiviUnitTestCase {
 
     // Leave the route table populated for subsequent tests.
     CRM_Core_Menu::rebuild();
+  }
+
+  /**
+   * rebuild rebuilds an empty route table but leaves a populated one alone.
+   */
+  public function testRebuildOnlyIfEmpty(): void {
+    $rebuilt = FALSE;
+    // Flag if save() has run
+    CRM_Utils_Hook::singleton()->setHook('civicrm_alterMenu', function (&$items) use (&$rebuilt) {
+      $rebuilt = TRUE;
+    });
+
+    CRM_Core_Menu::clear();
+    CRM_Core_Menu::rebuild();
+    $this->assertTrue($rebuilt, 'rebuild() should rebuild an empty table');
+
+    $rebuilt = FALSE;
+    CRM_Core_Menu::rebuild();
+    $this->assertFalse($rebuilt, 'rebuild() should skip a populated table');
   }
 
 }

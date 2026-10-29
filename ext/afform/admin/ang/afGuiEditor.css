@@ -328,8 +328,8 @@ body.af-gui-dragging {
 #afGuiEditor [ui-sortable] .af-gui-bar:before,
 #afGuiEditor .af-gui-entity-palette-select-list [ui-sortable] > div:not(.disabled):hover:before,
 #afGuiEditor af-gui-edit-options.af-gui-content-editing-area [ui-sortable] li:before {
-  background-size: cover;
   background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjODg4Ij48L3JlY3Q+Cjwvc3ZnPg==");
+  background-size: cover;
   width: 10px;
   height: 15px;
   content: ' ';
@@ -676,10 +676,6 @@ body.af-gui-dragging {
 
 #bootstrap-theme.af-gui-conditional-dialog fieldset div.api4-input {
   margin-bottom: 10px;
-}
-
-#bootstrap-theme.af-gui-conditional-dialog fieldset div.api4-input.ui-sortable-helper {
-  background-color: rgba(255, 255, 255, .9);
 }
 
 #bootstrap-theme.af-gui-conditional-dialog fieldset div.api4-input.ui-sortable-helper {

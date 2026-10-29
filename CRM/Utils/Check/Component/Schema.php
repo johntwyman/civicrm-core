@@ -188,7 +188,7 @@ class CRM_Utils_Check_Component_Schema extends CRM_Utils_Check_Component {
       $messages[] = new CRM_Utils_Check_Message(
         __FUNCTION__,
         ts(
-          '<p>The table <code>%1</code> includes an incorrect constraint. <a %2>Learn how to fix this.</a>', [
+          'The table <code>%1</code> includes an incorrect constraint. <a %2>Learn how to fix this.</a>', [
             1 => 'civicrm_activity',
             2 => 'target="_blank" href="' . htmlentities($docUrl) . '"',
           ]
@@ -211,7 +211,7 @@ class CRM_Utils_Check_Component_Schema extends CRM_Utils_Check_Component {
       $msg = new CRM_Utils_Check_Message(
         __FUNCTION__,
         ts(
-          '<p>The Monetary Value Display format is a deprecated setting, and this site has a non-standard format. Please report your configuration on <a href="%1">this Gitlab issue</a>.',
+          'The Monetary Value Display format is a deprecated setting, and this site has a non-standard format. Please report your configuration on <a href="%1">this Gitlab issue</a>.',
           [1 => 'https://lab.civicrm.org/dev/core/-/issues/1494']
         ),
         ts('Deprecated monetary value display format configuration'),
@@ -236,13 +236,14 @@ class CRM_Utils_Check_Component_Schema extends CRM_Utils_Check_Component {
         ts("Your database is missing a function to populate the 'Phone number' field with a numbers-only version of the phone."),
         ts('Missing Phone numeric function'),
         \Psr\Log\LogLevel::WARNING,
-        'fa-server'
+        'fa-database'
       );
       $msg->addAction(
-        ts('Rebuild triggers (also re-builds the phone number function)'),
-        ts('Create missing function now? This may take a few minutes.'),
-        'api3',
-        ['System', 'flush', ['triggers' => TRUE]]
+        ts('Rebuild SQL Triggers and Functions'),
+        ts('Rebuild SQL triggers and functions now? This may take a few minutes.'),
+        'api4',
+        ['System', 'flush', ['triggers' => TRUE]],
+        'fa-clock-rotate-left'
       );
       return [$msg];
     }
@@ -269,10 +270,11 @@ class CRM_Utils_Check_Component_Schema extends CRM_Utils_Check_Component {
         'fa-database'
       );
       $msg->addAction(
-        ts('Rebuild triggers'),
-        ts('Create missing triggers now? This may take a few minutes.'),
-        'api3',
-        ['System', 'flush', ['triggers' => TRUE]]
+        ts('Rebuild SQL Triggers and Functions'),
+        ts('Rebuild SQL triggers and functions now? This may take a few minutes.'),
+        'api4',
+        ['System', 'flush', ['triggers' => TRUE]],
+        'fa-clock-rotate-left'
       );
       return [$msg];
     }

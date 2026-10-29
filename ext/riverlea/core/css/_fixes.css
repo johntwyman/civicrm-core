@@ -33,8 +33,6 @@
 
 .crm-container .crm-accordion-header::before,
 details.af-collapsible > .af-title::before,
-.crm-dashlet-header .crm-dashlet-collapse.fa-caret-down::before,
-.crm-dashlet-header .crm-dashlet-collapse.fa-caret-right::before,
 .crm-container .crm-master-accordion-header:before,
 .crm-container .expanded::before,
 .crm-container a.collapsed::before,
@@ -58,7 +56,6 @@ details.af-collapsible > .af-title::before,
 }
 .crm-container .collapsed .crm-accordion-header::before,
 .crm-accordion-wrapper.collapsed .crm-master-accordion-header:before,
-.crm-dashlet-header .crm-dashlet-collapse.fa-caret-right::before,
 details.af-collapsible.af-collapsed > .af-title::before,
 .crm-container a.collapsed:not(.expanded)::before,
 .crm-container a.crm-expand-row::before,
@@ -72,7 +69,6 @@ details.af-collapsible.af-collapsed > .af-title::before,
 .crm-container .crm-accordion-header::before,
 details.af-collapsible[open] > .af-title::before,
 .crm-container .crm-collapsible .collapsible-title::before,
-.crm-dashlet-header .crm-dashlet-collapse.fa-caret-down::before,
 .crm-container .crm-master-accordion-header:before,
 .crm-container a.collapsed::before,
 .crm-container a.expanded::before,
@@ -362,29 +358,6 @@ body[class*="page-civicrm-report-"] #report-tab-order-by-elements #optionFieldLi
 }
 .crm-container .panel-heading .nav.nav-tabs {
   background-color: transparent;
-}
-.crm-container .afadmin-list > table,
-.crm-search:has(.crm-search-nav-tabs) .crm-search-display.crm-search-display-table {
-  border: var(--crm-tabs-border);
-  box-shadow: none;
-  border-radius: 0 0 var(--crm-l-radius) var(--crm-l-radius);
-  background: var(--crm-tab-bg-active);
-}
-.crm-container .afadmin-list >  .form-inline,
-.crm-search > .ng-scope > .form-inline {
-  border: var(--crm-tabs-border);
-  border-radius: 0;
-  border-top-width: 0;
-  border-bottom-width: 0;
-}
-.afadmin-list > .form-inline {
-  border-radius: 0;
-  border-bottom: 0;
-}
-.afadmin-list .nav-tabs + .form-inline,
-.crm-search-nav-tabs ~ .ng-scope > .form-inline {
-  padding: var(--crm-l-reg);
-  background: var(--crm-tab-bg-active);
 }
 .crm-container .ui-tabs ul.crm-extensions-tabs-list a em {
   display: none;
@@ -755,6 +728,12 @@ details + .crm-content-block:has(.dataTables_wrapper) {
 .crm-container #tab-surveys,
 .crm-container #tab-petitions {
   padding: var(--crm-tab-padding);
+}
+
+/* af-admin-list-menu - fix btn float:right narrowing available space for table */
+#bootstrap-theme af-admin-list-menu .btn {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /******************

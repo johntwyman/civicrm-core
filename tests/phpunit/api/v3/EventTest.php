@@ -114,7 +114,7 @@ class api_v3_EventTest extends CiviUnitTestCase {
   public function testGetEventWithPermissionHook(): void {
     $address = $this->callAPISuccess('address', 'create', [
       'contact_id' => 'null',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'street_address' => '1234567',
       'state_province_id' => 'California',
     ]);
@@ -171,7 +171,7 @@ class api_v3_EventTest extends CiviUnitTestCase {
       'return.max_results' => 1,
     ];
     $result = $this->callAPISuccess('Event', 'Get', $params);
-    $this->assertEquals(1, $result['id'], ' in line ' . __LINE__);
+    $this->assertEquals($this->_eventIds[0], $result['id'], ' in line ' . __LINE__);
     $params = [
       'options' => [
         'sort' => 'id DESC',
@@ -181,7 +181,7 @@ class api_v3_EventTest extends CiviUnitTestCase {
 
     $result = $this->callAPISuccess('Event', 'Get', $params);
     $this->assertAPISuccess($result, ' in line ' . __LINE__);
-    $this->assertEquals(2, $result['id'], ' in line ' . __LINE__);
+    $this->assertEquals($this->_eventIds[1], $result['id'], ' in line ' . __LINE__);
     $params = [
       'options' => [
         'sort' => 'id ASC',
@@ -189,7 +189,7 @@ class api_v3_EventTest extends CiviUnitTestCase {
       ],
     ];
     $result = $this->callAPISuccess('Event', 'Get', $params);
-    $this->assertEquals(1, $result['id'], ' in line ' . __LINE__);
+    $this->assertEquals($this->_eventIds[0], $result['id'], ' in line ' . __LINE__);
 
   }
 
@@ -278,7 +278,7 @@ class api_v3_EventTest extends CiviUnitTestCase {
     $this->assertEquals(0, $currentEvent['is_full'], ' is full is set in line ' . __LINE__);
     $this->assertEquals(1, $currentEvent['available_places'], 'available places is set in line ' . __LINE__);
     $participant = $this->callAPISuccess('Participant', 'create', [
-      'participant_status' => 1,
+      'participant_status' => $this->getParticipantStatusID('Registered'),
       'role_id' => 1,
       'contact_id' => $contactID,
       'event_id' => $this->_eventIds[0],
@@ -296,14 +296,14 @@ class api_v3_EventTest extends CiviUnitTestCase {
    * We need to ensure this is supported as an alias for financial_type_id.
    */
   public function testCreateGetEventLegacyContributionTypeID(): void {
-    $contributionTypeArray = ['contribution_type_id' => 3];
+    $contributionTypeArray = ['contribution_type_id' => $this->getFinancialTypeID('Campaign Contribution')];
     if (isset($this->_params[0]['financial_type_id'])) {
       //in case someone edits $this->_params & invalidates this test :-)
       unset($this->_params[0]['financial_type_id']);
     }
     $result = $this->callAPISuccess('event', 'create', $this->_params[0] + $contributionTypeArray);
     $getresult = $this->callAPISuccess('event', 'get', [] + $contributionTypeArray);
-    $this->assertEquals($getresult['values'][$getresult['id']]['contribution_type_id'], 3);
+    $this->assertEquals($getresult['values'][$getresult['id']]['contribution_type_id'], $this->getFinancialTypeID('Campaign Contribution'));
     $this->assertEquals($result['id'], $getresult['id']);
     $this->callAPISuccess('event', 'delete', ['id' => $result['id']]);
   }
@@ -324,7 +324,7 @@ class api_v3_EventTest extends CiviUnitTestCase {
         'postal_code' => '2000',
         'city' => 'Antwerpen',
         'country_id' => '1020',
-        'location_type_id' => '1',
+        'location_type_id' => $this->getLocationTypeID('Home'),
       ],
       'api.Event.create' => $eventParams,
       'sequential' => 1,

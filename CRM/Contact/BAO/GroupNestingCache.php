@@ -57,7 +57,7 @@ WHERE  n.child_group_id  = gc.id
     }
 
     if (self::checkCyclicGraph($tree)) {
-      throw new CRM_Core_Exception(ts('We detected a cycle which we can\'t handle. aborting'));
+      throw new CRM_Core_Exception(ts("We detected a cycle which we can't handle. aborting"));
     }
 
     // first reset the current cache entries
@@ -198,58 +198,6 @@ WHERE  id = $id
     foreach ($tree[$id][$token] as $tokenID) {
       self::getAll($all, $tree, $tokenID, $token);
     }
-  }
-
-  /**
-   * @return string
-   *
-   * @throws \CRM_Core_Exception
-   */
-  public static function json() {
-    $tree = Civi::cache('groups')->get('nestable tree hierarchy');
-
-    if ($tree === NULL) {
-      self::update();
-      $tree = Civi::cache('groups')->get('nestable tree hierarchy');
-    }
-
-    // get all the groups
-    $groups = CRM_Core_PseudoConstant::group();
-
-    foreach ($groups as $id => $name) {
-      $string = "id:'$id', name:'$name'";
-      if (isset($tree[$id])) {
-        $children = [];
-        if (!empty($tree[$id]['children'])) {
-          foreach ($tree[$id]['children'] as $child) {
-            $children[] = "{_reference:'$child'}";
-          }
-          $children = implode(',', $children);
-          $string .= ", children:[$children]";
-          if (empty($tree[$id]['parents'])) {
-            $string .= ", type:'rootGroup'";
-          }
-          else {
-            $string .= ", type:'middleGroup'";
-          }
-        }
-        else {
-          $string .= ", type:'leafGroup'";
-        }
-      }
-      else {
-        $string .= ", children:[], type:'rootGroup'";
-      }
-      $values[] = "{ $string }";
-    }
-
-    $items = implode(",\n", $values);
-    $json = "{
-  identifier:'id',
-  label:'name',
-  items:[ $items ]
-}";
-    return $json;
   }
 
 }

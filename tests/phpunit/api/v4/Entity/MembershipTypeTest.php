@@ -19,10 +19,7 @@ use Civi\Test\TransactionalInterface;
  */
 class MembershipTypeTest extends Api4TestBase implements TransactionalInterface {
 
-  public function setUp(): void {
-    parent::setUp();
-    \CRM_Core_BAO_ConfigSetting::enableComponent('CiviMember');
-  }
+  protected ?array $enableComponents = ['CiviMember'];
 
   public function testRelationshipTypeLabel(): void {
     $relationshipType1 = $this->createTestRecord('RelationshipType', [
@@ -56,7 +53,7 @@ class MembershipTypeTest extends Api4TestBase implements TransactionalInterface 
       'duration_interval' => 1,
       'period_type' => 'rolling',
       'member_of_contact_id' => $contact['id'],
-      'financial_type_id' => 2,
+      'financial_type_id:name' => 'Member Dues',
       'relationship_type_id' => $relationshipType1['id'],
       'relationship_direction' => 'a_b',
     ]);
@@ -88,7 +85,7 @@ class MembershipTypeTest extends Api4TestBase implements TransactionalInterface 
       'duration_interval' => 1,
       'period_type' => 'rolling',
       'member_of_contact_id' => $contact['id'],
-      'financial_type_id' => 2,
+      'financial_type_id:name' => 'Member Dues',
       'relationship_type_id' => [$relationshipType1['id'], $relationshipType2['id']],
       'relationship_direction' => ['a_b', 'b_a'],
     ]);

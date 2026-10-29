@@ -85,6 +85,14 @@ class Kernel {
       return $this->formatResult($apiRequest, $apiResponse);
     }
     catch (\Exception $e) {
+      \Civi::log()->error(
+        "API request $entity.$action failed",
+        [
+          'params' => $params,
+          'exception' => $e,
+        ]
+      );
+
       if ($e instanceof \CRM_Core_Exception) {
         $err = $this->formatApiException($e, $apiRequest);
       }
@@ -165,7 +173,7 @@ class Kernel {
 
       return $this->respond($apiProvider, $apiRequest, $result);
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
       if ($apiRequest) {
         $this->dispatcher->dispatch('civi.api.exception', new ExceptionEvent($e, NULL, $apiRequest, $this));
       }

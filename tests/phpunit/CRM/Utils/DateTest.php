@@ -85,16 +85,21 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
   }
 
   /**
-   * Test that getFromTo returns the correct dates.
+   * Test that getFromTo returns the correct dates and triggers deprecation for hook_civicrm_relativeDate.
    */
   public function testGetFromTo(): void {
     $this->hookClass->setHook('civicrm_relativeDate', [$this, 'hook_civicrm_relativeDate_q1']);
     $cases = $this->fromToData();
-    foreach ($cases as $caseDescription => $case) {
-      [$calculatedFrom, $calculatedTo] = CRM_Utils_Date::getFromTo($case['relative'], $case['from'], $case['to']);
-      $this->assertEquals($case['expectedFrom'], $calculatedFrom, "Expected From failed for case $caseDescription");
-      $this->assertEquals($case['expectedTo'], $calculatedTo, "Expected To failed for case $caseDescription");
-    }
+    $deprecations = self::captureErrors(E_USER_DEPRECATED, function () use ($cases) {
+      foreach ($cases as $caseDescription => $case) {
+        [$calculatedFrom, $calculatedTo] = CRM_Utils_Date::getFromTo($case['relative'], $case['from'], $case['to']);
+        $this->assertEquals($case['expectedFrom'], $calculatedFrom, "Expected From failed for case $caseDescription");
+        $this->assertEquals($case['expectedTo'], $calculatedTo, "Expected To failed for case $caseDescription");
+      }
+    });
+
+    $this->assertCount(1, $deprecations);
+    $this->assertStringContainsString('hook_civicrm_relativeDate is deprecated', $deprecations[0]);
   }
 
   public function hook_civicrm_relativeDate_q1($filter) {
@@ -105,6 +110,64 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       $dates['to'] = (new DateTime('March 31st'))->format('Ymd');
     }
     return $dates;
+  }
+
+  /**
+   * Test hook_civicrm_relativeDateSql.
+   */
+  public function testRelativeDateSqlHook(): void {
+    $this->hookClass->setHook('civicrm_relativeDateSql', [$this, 'hook_civicrm_relativeDateSql_custom']);
+
+    // 1. Custom token handled by hook (returns SQL expressions)
+    $sql = CRM_Utils_Date::relativeToSql('custom_q1');
+    $this->assertEquals([
+      'from' => "STR_TO_DATE('2026-01-01', '%Y-%m-%d')",
+      'to' => "STR_TO_DATE('2026-03-31 23:59:59', '%Y-%m-%d %H:%i:%s')",
+    ], $sql);
+
+    // 2. relativeToAbsolute evaluates the SQL expressions
+    $absolute = CRM_Utils_Date::relativeToAbsolute('custom_q1');
+    $this->assertEquals([
+      'from' => '20260101',
+      'to' => '20260331235959',
+    ], $absolute);
+
+    // 3. getFromTo delegates to relativeToAbsolute and formats 14-char dates
+    [$from, $to] = CRM_Utils_Date::getFromTo('custom_q1');
+    $this->assertEquals('20260101000000', $from);
+    $this->assertEquals('20260331235959', $to);
+
+    // 4. Custom term with a unit
+    $sqlUnit = CRM_Utils_Date::relativeToSql('custom_term', 'week');
+    $this->assertEquals([
+      'from' => "DATE_SUB(CURDATE(), INTERVAL 14 DAY)",
+      'to' => "CURDATE() + INTERVAL 1 DAY - INTERVAL 1 SECOND",
+    ], $sqlUnit);
+
+    // 5. Standard relative date is not affected when hook does not handle it
+    $standardSql = CRM_Utils_Date::relativeToSql('this', 'day');
+    $this->assertEquals([
+      'from' => 'CURDATE()',
+      'to' => 'DATE_ADD(CURDATE(), INTERVAL 1 DAY) - INTERVAL 1 SECOND',
+    ], $standardSql);
+
+    // 6. Unknown filter where hook does not modify $sql returns NULL
+    $this->assertNull(CRM_Utils_Date::relativeToSql('unhandled_token'));
+  }
+
+  public function hook_civicrm_relativeDateSql_custom(string $relativeTerm, ?string $unit, array &$sql): void {
+    if ($relativeTerm === 'custom_q1') {
+      $sql = [
+        'from' => "STR_TO_DATE('2026-01-01', '%Y-%m-%d')",
+        'to' => "STR_TO_DATE('2026-03-31 23:59:59', '%Y-%m-%d %H:%i:%s')",
+      ];
+    }
+    elseif ($relativeTerm === 'custom_term' && $unit === 'week') {
+      $sql = [
+        'from' => "DATE_SUB(CURDATE(), INTERVAL 14 DAY)",
+        'to' => "CURDATE() + INTERVAL 1 DAY - INTERVAL 1 SECOND",
+      ];
+    }
   }
 
   /**
@@ -2649,6 +2712,22 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
     ], $date);
   }
 
+  /**
+   * Ensure relativeToAbsolute() executes cleanly for all defined option group filters.
+   */
+  public function testRelativeToAbsoluteAllOptionGroupFilters(): void {
+    $filters = \CRM_Core_OptionGroup::values('relative_date_filters');
+    $this->assertNotEmpty($filters);
+    foreach ($filters as $filter => $label) {
+      [$term, $unit] = explode('.', $filter, 2);
+      $result = \CRM_Utils_Date::relativeToAbsolute($term, $unit);
+      // Array keys 'from' and 'to' should exist and be a non-empty string or NULL
+      $this->assertTrue((is_string($result['from']) && strlen($result['from'])) || is_null($result['from']));
+      $this->assertTrue((is_string($result['to']) && strlen($result['to'])) || is_null($result['to']));
+      $this->assertTrue($result['from'] || $result['to'], "Filter $filter should return at least from or to");
+    }
+  }
+
   public function testLocalizeConstants(): void {
     // Depending on the local version of the system-library `icu`, abbreviations
     // -might- have a trailing dot. (Ex: icu@64 has trailing dot, but icu@73 does not.)
@@ -2716,6 +2795,11 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       // YYYY-mm-dd format - eg. 2022-10-01.
       '2022-10-01' => ['date' => '2022-10-01', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => '20221001000000'],
       'invalid_date_2022-25-01' => ['date' => '2022-25-01', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => NULL],
+      'invalid_day_2022-04-31' => ['date' => '2022-04-31', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => NULL],
+      'invalid_day_20220229' => ['date' => '20220229', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => NULL],
+      'invalid_day_2022-04-31 15:54' => ['date' => '2022-04-31 15:54', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => NULL],
+      'zero_date_0000-00-00' => ['date' => '0000-00-00', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => NULL],
+      'leap_day_2024-02-29' => ['date' => '2024-02-29', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => '20240229000000'],
       '2022-10-01 15:54' => ['date' => '2022-10-01 15:54', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => '20221001155400'],
       '2022-10-01 3:54' => ['date' => '2022-10-01 3:54', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => '20221001035400'],
       '2022-10-01 15:54:56' => ['date' => '2022-10-01 15:54:56', 'format' => CRM_Utils_Date::DATE_yyyy_mm_dd, 'expected' => '20221001155456'],
@@ -2734,6 +2818,7 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       '10/1/22' => ['date' => '10/1/22', 'format' => CRM_Utils_Date::DATE_mm_dd_yy, 'expected' => '20221001000000'],
       '10/01/22 15:54:56' => ['date' => '10/01/22 15:54:56', 'format' => CRM_Utils_Date::DATE_mm_dd_yy, 'expected' => '20221001155456'],
       '10/01/22 3:54:56' => ['date' => '10/01/22 3:54:56', 'format' => CRM_Utils_Date::DATE_mm_dd_yy, 'expected' => '20221001035456'],
+      'invalid_day_04/31/22' => ['date' => '04/31/22', 'format' => CRM_Utils_Date::DATE_mm_dd_yy, 'expected' => NULL],
 
       // mm_dd_yyyy format - eg. US Style 10-01-2022 OR 10/01/2022 where 10 is the month. 4 digit year.
       '10-01-2022' => ['date' => '10-01-2022', 'format' => CRM_Utils_Date::DATE_mm_dd_yyyy, 'expected' => '20221001000000'],
@@ -2743,6 +2828,7 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       '10/01/2022' => ['date' => '10/01/2022', 'format' => CRM_Utils_Date::DATE_mm_dd_yyyy, 'expected' => '20221001000000'],
       '10/1/2022' => ['date' => '10/1/2022', 'format' => CRM_Utils_Date::DATE_mm_dd_yyyy, 'expected' => '20221001000000'],
       '10/1/2022 15:54:56' => ['date' => '10/1/2022 15:54:56', 'format' => CRM_Utils_Date::DATE_mm_dd_yyyy, 'expected' => '20221001155456'],
+      'invalid_day_02-30-2022' => ['date' => '02-30-2022', 'format' => CRM_Utils_Date::DATE_mm_dd_yyyy, 'expected' => NULL],
 
       // DATE_Month_dd_yyyy ie December, 12 2023
       'December, 11 2023' => ['date' => 'December, 11 2023', 'format' => CRM_Utils_Date::DATE_Month_dd_yyyy, 'expected' => '20231211000000'],
@@ -2751,6 +2837,7 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       'December,  1 2023-with-tab' => ['date' => "December,\t1 2023", 'format' => CRM_Utils_Date::DATE_Month_dd_yyyy, 'expected' => '20231201000000'],
       'December 1 2023-no-comma' => ['date' => 'December 1 2023', 'format' => CRM_Utils_Date::DATE_Month_dd_yyyy, 'expected' => '20231201000000'],
       'December 1 2023 15:35:35' => ['date' => 'December 1 2023 15:35:35', 'format' => CRM_Utils_Date::DATE_Month_dd_yyyy, 'expected' => '20231201153535'],
+      'invalid_day_February 30 2023' => ['date' => 'February 30 2023', 'format' => CRM_Utils_Date::DATE_Month_dd_yyyy, 'expected' => NULL],
 
       // dd_mon_yy format (NZ, Australia) - eg. 01-10-22 or 01/10/22 WHERE 01 is the DAY. 2 digit year.
       '01/10/22' => ['date' => '01/10/22', 'format' => CRM_Utils_Date::DATE_dd_mon_yy, 'expected' => '20221001000000'],
@@ -2760,6 +2847,7 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       '1-Oct-22 3:54:56' => ['date' => '1-Oct-22 3:54:56', 'format' => CRM_Utils_Date::DATE_dd_mon_yy, 'expected' => '20221001035456'],
       '1-10-22 15:54:56' => ['date' => '1-10-22 15:54:56', 'format' => CRM_Utils_Date::DATE_dd_mon_yy, 'expected' => '20221001155456'],
       '1-10-22 3:54:56' => ['date' => '1-10-22 3:54:56', 'format' => CRM_Utils_Date::DATE_dd_mon_yy, 'expected' => '20221001035456'],
+      'invalid_day_31-Apr-22' => ['date' => '31-Apr-22', 'format' => CRM_Utils_Date::DATE_dd_mon_yy, 'expected' => NULL],
 
       // dd_mon_yyyy format (NZ, Australia) - eg. 01-10-2022 or 01/10/2022 WHERE 01 is the DAY. 4 digit year.
       '01/10/2022' => ['date' => '01/10/2022', 'format' => CRM_Utils_Date::DATE_dd_mm_yyyy, 'expected' => '20221001000000'],
@@ -2770,18 +2858,59 @@ class CRM_Utils_DateTest extends CiviUnitTestCase {
       '1-10-2022 3:54:56' => ['date' => '1-10-2022 3:54:56', 'format' => CRM_Utils_Date::DATE_dd_mm_yyyy, 'expected' => '20221001035456'],
       // German format https://civicrm.stackexchange.com/questions/34174/contact-import-german-date-format-support
       '01.10.2022' => ['date' => '01.10.2022', 'format' => CRM_Utils_Date::DATE_dd_mm_yyyy, 'expected' => '20221001000000'],
+      'invalid_day_31.04.1980' => ['date' => '31.04.1980', 'format' => CRM_Utils_Date::DATE_dd_mm_yyyy, 'expected' => NULL],
+      'invalid_day_29.02.1981' => ['date' => '29.02.1981', 'format' => CRM_Utils_Date::DATE_dd_mm_yyyy, 'expected' => NULL],
+      'leap_day_29.02.1980' => ['date' => '29.02.1980', 'format' => CRM_Utils_Date::DATE_dd_mm_yyyy, 'expected' => '19800229000000'],
     ];
   }
 
-  public function testDatePluginToSetting(): void {
+  /**
+   * @dataProvider intervalAddMonthEndProvider
+   */
+  public function testIntervalAddClampsToMonthEnd(string $unit, int $interval, string $date, string $expected): void {
+    $result = CRM_Utils_Date::intervalAdd($unit, $interval, $date, TRUE);
+    $this->assertSame($expected, sprintf('%04d-%02d-%02d', $result['Y'], $result['M'], $result['d']));
+  }
+
+  public static function intervalAddMonthEndProvider(): array {
+    return [
+      ['month', 1, '2025-01-31', '2025-02-28'],
+      ['month', 1, '2024-01-31', '2024-02-29'],
+      ['month', 1, '2025-03-31', '2025-04-30'],
+      ['month', 13, '2025-01-31', '2026-02-28'],
+      ['month', 1, '2025-01-15', '2025-02-15'],
+      ['year', 1, '2024-02-29', '2025-02-28'],
+      ['day', 1, '2025-01-31', '2025-02-01'],
+    ];
+  }
+
+  public function testDatePluginToStrftime(): void {
+    $this->assertNull(CRM_Utils_Date::datePluginToStrftime(NULL, NULL));
+    $this->assertSame('%Y', CRM_Utils_Date::datePluginToStrftime('yy'));
+    $this->assertSame('%Y-%m', CRM_Utils_Date::datePluginToStrftime('yy-mm'));
+    $this->assertSame('%m/%d/%Y', CRM_Utils_Date::datePluginToStrftime('mm/dd/yy'));
+    $this->assertSame('%b %E, %Y', CRM_Utils_Date::datePluginToStrftime('M d, yy'));
+    $this->assertSame('%A, %E %B %Y', CRM_Utils_Date::datePluginToStrftime('DD, d MM yy'));
+
     foreach (CRM_Core_SelectValues::getDatePluginInputFormats() as $format => $label) {
-      $setting = CRM_Utils_Date::datePluginToSetting($format, NULL);
-      $this->assertNotEmpty($setting, "Format $format should map to a setting");
-      $this->assertStringStartsWith('dateformat', $setting);
+      $strftime = CRM_Utils_Date::datePluginToStrftime($format, NULL);
+      $this->assertNotEmpty($strftime, "Format $format should map to a strftime string");
+      $this->assertStringContainsString('%', $strftime);
     }
-    // Check with time
-    $setting = CRM_Utils_Date::datePluginToSetting($format, 1);
-    $this->assertSame('dateformatDatetime', $setting);
+    // Check with 12-hour time
+    $setting = CRM_Utils_Date::datePluginToStrftime('yy-mm-dd', 1);
+    $this->assertStringStartsWith('%Y-%m-%d', $setting);
+    $this->assertStringContainsString('%M', $setting);
+
+    // Check with 24-hour time
+    $setting = CRM_Utils_Date::datePluginToStrftime('yy-mm-dd', 2);
+    $this->assertSame('%Y-%m-%d %H:%M', $setting);
+
+    // Check time only
+    $this->assertSame('%H:%M', CRM_Utils_Date::datePluginToStrftime(NULL, 2));
+
+    // Check passthrough for strftime format
+    $this->assertSame('%d/%m/%Y', CRM_Utils_Date::datePluginToStrftime('%d/%m/%Y'));
   }
 
 }

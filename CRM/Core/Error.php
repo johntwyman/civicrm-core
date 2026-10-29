@@ -21,7 +21,6 @@ use Civi\Core\Exception\DBQueryException;
 
 require_once 'PEAR/ErrorStack.php';
 require_once 'PEAR/Exception.php';
-require_once 'CRM/Core/Exception.php';
 
 require_once 'Log.php';
 
@@ -248,6 +247,11 @@ class CRM_Core_Error extends PEAR_ErrorStack {
   public static function simpleHandler($pearError) {
 
     $error = self::getErrorDetails($pearError);
+
+    // If we failed in web context, then report the failure.
+    if (!headers_sent()) {
+      http_response_code(500);
+    }
 
     // ensure that debug does not check permissions since we are in bootstrap
     // mode and need to print a decent message to help the user
@@ -1008,7 +1012,7 @@ class CRM_Core_Error extends PEAR_ErrorStack {
    */
   public static function isAPIError($error, $type = CRM_Core_Error::FATAL_ERROR) {
     if (is_array($error) && !empty($error['is_error'])) {
-      $code = $error['error_message']['code'];
+      $code = $error['error_message']['code'] ?? NULL;
       if ($code == $type) {
         return TRUE;
       }

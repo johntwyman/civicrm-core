@@ -175,7 +175,7 @@ class CRM_Member_Form_MembershipBlock extends CRM_Contribute_Form_ContributionPa
       'label' => ts('Membership Price Set'),
       'name' => 'price_set_id',
       'options' => $price,
-    ]);
+    ])->setOptionTextEscaped();
 
     $session = CRM_Core_Session::singleton();
     $single = $session->get('singleForm');
@@ -297,7 +297,7 @@ class CRM_Member_Form_MembershipBlock extends CRM_Contribute_Form_ContributionPa
 
       //give error if default is selected for an unchecked membership type
       if (!empty($params['membership_type_default']) && !$params['membership_type'][$params['membership_type_default']]) {
-        $errors['membership_type_default'] = ts('Can\'t set default option for an unchecked membership type.');
+        $errors['membership_type_default'] = ts("Can't set default option for an unchecked membership type.");
       }
 
       if ($contributionPageId) {

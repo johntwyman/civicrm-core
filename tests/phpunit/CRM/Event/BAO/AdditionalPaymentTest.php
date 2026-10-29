@@ -11,6 +11,7 @@
 
 use Civi\Api4\Contribution;
 use Civi\Api4\EntityFinancialAccount;
+use Civi\Api4\OptionValue;
 
 /**
  * Class CRM_Event_BAO_AdditionalPaymentTest
@@ -88,7 +89,7 @@ class CRM_Event_BAO_AdditionalPaymentTest extends CiviUnitTestCase {
         'currency' => 'USD',
         'receipt_date' => 'today',
         'contact_id' => $this->contactID,
-        'financial_type_id' => 4,
+        'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
         'payment_instrument_id' => 4,
         'contribution_status_id' => 'Pending',
         'receive_date' => 'today',
@@ -188,7 +189,10 @@ class CRM_Event_BAO_AdditionalPaymentTest extends CiviUnitTestCase {
     $this->assertEquals(0, $contribution['balance_amount'], 'Balance is not correct');
     $this->assertEquals('Completed', $contribution['contribution_status_id:label'], 'Contribution status is not correct');
 
-    $this->callAPISuccess('OptionValue', 'delete', ['id' => $paymentInstrumentID]);
+    OptionValue::delete(FALSE)
+      ->addWhere('option_group_id:name', '=', 'payment_instrument')
+      ->addWhere('value', '=', $paymentInstrumentID)
+      ->execute();
   }
 
   /**
@@ -264,10 +268,10 @@ class CRM_Event_BAO_AdditionalPaymentTest extends CiviUnitTestCase {
 
     //Change selection to a lower amount.
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
-      'price_2' => $this->ids['PriceFieldValue']['PaidEvent_student_early'],
+      'price_' . $this->ids['PriceField']['PaidEvent'] => $this->ids['PriceFieldValue']['PaidEvent_student_early'],
       'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
     ], [
-      'id' => $contributionID,
+      'id' => $result['participant']['id'],
       'action' => CRM_Core_Action::UPDATE,
     ])->processForm();
     $this->callAPISuccess('Payment', 'create', [

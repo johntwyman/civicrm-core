@@ -332,7 +332,7 @@ WHERE     pledge_id = %1
             'scheduled_amount' => ($pledgeScheduledAmount - $actualAmount),
             'scheduled_date' => $ScheduledDate,
           ];
-          $payment = self::add($pledgeParams);
+          $payment = self::writeRecord($pledgeParams);
           // while editing schedule,  after adding a new pledge payemnt update the scheduled amount of the current payment
           if (!$paymentContributionId) {
             CRM_Core_DAO::setFieldValue('CRM_Pledge_DAO_PledgePayment', $payments, 'scheduled_amount', $actualAmount);
@@ -713,7 +713,7 @@ WHERE civicrm_pledge_payment.contribution_id = {$paymentContributionId}
         'scheduled_amount' => $pledgeScheduledAmount,
         'scheduled_date' => $ScheduledDate,
       ];
-      $payment = self::add($pledgeParams);
+      $payment = self::writeRecord($pledgeParams);
     }
     else {
       $nextPledgeInstallmentDue = self::getOldestPledgePayment($pledgeID);
@@ -845,6 +845,18 @@ WHERE civicrm_pledge_payment.contribution_id = {$paymentContributionId}
         }
       }
     }
+  }
+
+  /**
+   * @param string|null $entityName
+   * @param int|null $userId
+   * @param array $conditions
+   * @inheritDoc
+   */
+  public function addSelectWhereClause(?string $entityName = NULL, ?int $userId = NULL, array $conditions = []): array {
+    $clauses['pledge_id'] = CRM_Utils_SQL::mergeSubquery('Pledge');
+    CRM_Utils_Hook::selectWhereClause($this, $clauses, $userId, $conditions);
+    return $clauses;
   }
 
 }

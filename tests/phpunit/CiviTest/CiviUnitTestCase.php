@@ -35,8 +35,10 @@ use Civi\Api4\CustomField;
 use Civi\Api4\CustomGroup;
 use Civi\Api4\DedupeRuleGroup;
 use Civi\Api4\DedupeRule;
+use Civi\Api4\EntityFinancialTrxn;
 use Civi\Api4\ExampleData;
 use Civi\Api4\FinancialAccount;
+use Civi\Api4\FinancialItem;
 use Civi\Api4\FinancialType;
 use Civi\Api4\LineItem;
 use Civi\Api4\MembershipType;
@@ -56,6 +58,7 @@ use Civi\Test\EventTestTrait;
 use Civi\Test\FormTrait;
 use Civi\Test\GenericAssertionsTrait;
 use Civi\Test\LocaleTestTrait;
+use Civi\Test\LookupHelperTrait;
 use Civi\Test\MailingTestTrait;
 use Civi\Test\PageTrait;
 use League\Csv\Reader;
@@ -93,6 +96,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
   use ContactTestTrait;
   use MailingTestTrait;
   use LocaleTestTrait;
+  use LookupHelperTrait;
   use FormTrait;
   use PageTrait;
 
@@ -145,6 +149,15 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    * @var bool
    */
   protected $isValidateFinancialsOnPostAssert = TRUE;
+
+  /**
+   * Should validateAllFinancialTrxns() run after the test but before tear down.
+   *
+   * Opt-in for now - there are too many existing failures to default this on.
+   *
+   * @var bool
+   */
+  protected $isValidateFinancialTrxnsOnPostAssert = FALSE;
 
   /**
    * Should location types be checked to ensure primary addresses are correctly assigned after each test.
@@ -264,7 +277,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $this->getTestForm('CRM_Case_Form_Case',
       array_merge([
         'activity_subject' => 'Case Subject',
-        'case_type_id' => 1,
+        'case_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Case_BAO_Case', 'case_type_id', 'housing_support'),
         'status_id' => 1,
         'case_type' => 'housing_support',
         'subject' => 'Case Subject',
@@ -397,42 +410,6 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
   }
 
   /**
-   * Read everything from the datasets directory and insert into the db.
-   *
-   * @noinspection PhpUnhandledExceptionInspection*/
-  public function loadAllFixtures(): void {
-    $fixturesDir = __DIR__ . '/../../fixtures';
-
-    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 0;');
-
-    $jsonFiles = glob($fixturesDir . '/*.json');
-    foreach ($jsonFiles as $jsonFixture) {
-      $json = json_decode(file_get_contents($jsonFixture));
-      foreach ($json as $tableName => $vars) {
-        if ($tableName === 'civicrm_contact') {
-          CRM_Core_DAO::executeQuery('DELETE c FROM civicrm_contact c LEFT JOIN civicrm_domain d ON d.contact_id = c.id WHERE d.id IS NULL');
-        }
-        else {
-          CRM_Core_DAO::executeQuery("TRUNCATE $tableName");
-        }
-        foreach ($vars as $entity) {
-          $keys = $values = [];
-          foreach ($entity as $key => $value) {
-            $keys[] = $key;
-            $values[] = is_numeric($value) ? $value : "'{$value}'";
-          }
-          CRM_Core_DAO::executeQuery("
-            INSERT INTO $tableName (" . implode(',', $keys) . ') VALUES(' . implode(',', $values) . ')'
-          );
-        }
-
-      }
-    }
-
-    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 1;');
-  }
-
-  /**
    * Load the data that used to be handled by the discontinued dbunit class.
    *
    * This could do with further tidy up - the initial priority is simply to get rid of
@@ -507,13 +484,16 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    */
   public function createDomainContacts(): void {
     try {
-      $this->organizationCreate(['email' => 'fixme.domainemail@example.org']);
-      $this->organizationCreate([
+      // The contacts are recreated with new ids, so the domains and the seeded
+      // financial accounts must be pointed at them.
+      $oldContactIDs = CRM_Core_DAO::executeQuery('SELECT id, contact_id FROM civicrm_domain WHERE id IN (1, 2)')->fetchMap('id', 'contact_id');
+      $newContactIDs[1] = $this->organizationCreate(['email' => 'fixme.domainemail@example.org']);
+      $newContactIDs[2] = $this->organizationCreate([
         'organization_name' => 'Second Domain',
         'api.Email.create' => ['email' => 'domainemail2@example.org'],
         'api.Address.create' => [
           'street_address' => '15 Main St',
-          'location_type_id' => 1,
+          'location_type_id' => $this->getLocationTypeID('Home'),
           'city' => 'Collinsville',
           'country_id' => 1228,
           'state_province_id' => 1003,
@@ -529,6 +509,13 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
           'email' => 'info@EXAMPLE.ORG',
         ])
         ->setRecords([['domain_id' => 1], ['domain_id' => 2]])->execute();
+      foreach ($newContactIDs as $domainID => $contactID) {
+        CRM_Core_DAO::executeQuery('UPDATE civicrm_domain SET contact_id = %1 WHERE id = %2', [1 => [$contactID, 'Integer'], 2 => [$domainID, 'Integer']]);
+        if (!empty($oldContactIDs[$domainID])) {
+          CRM_Core_DAO::executeQuery('UPDATE civicrm_financial_account SET contact_id = %1 WHERE contact_id = %2', [1 => [$contactID, 'Integer'], 2 => [$oldContactIDs[$domainID], 'Integer']]);
+        }
+      }
+      unset(Civi::$statics['CRM_Core_BAO_Domain']['current']);
     }
     catch (CRM_Core_Exception $e) {
       $this->fail('failed to re-instate domain contacts ' . $e->getMessage());
@@ -560,7 +547,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       CRM_Core_Transaction::forceRollbackIfEnabled();
       Manager::singleton(TRUE);
 
-      $tablesToTruncate = ['civicrm_contact', 'civicrm_uf_match', 'civicrm_email', 'civicrm_address', 'civicrm_acl'];
+      $tablesToTruncate = ['civicrm_contact', 'civicrm_uf_match', 'civicrm_email', 'civicrm_address', 'civicrm_phone', 'civicrm_loc_block', 'civicrm_acl'];
       $this->quickCleanup($tablesToTruncate);
       $this->createDomainContacts();
     }
@@ -644,6 +631,9 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     }
     $this->validateAllPayments();
     $this->validateAllContributions();
+    if ($this->isValidateFinancialTrxnsOnPostAssert) {
+      $this->validateAllFinancialTrxns();
+    }
   }
 
   /**
@@ -705,7 +695,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'period_type' => 'rolling',
       'member_of_contact_id' => $memberOfOrganization,
       'domain_id' => 1,
-      'financial_type_id' => 2,
+      'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
       'is_active' => 1,
       'sequential' => 1,
       'visibility' => 'Public',
@@ -926,7 +916,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'name' => 'Dummy',
       'title' => 'Dummy',
       'payment_processor_type_id:name' => 'Dummy',
-      'financial_account_id' => 12,
+      'financial_account_id' => $this->getFinancialAccountID('Payment Processor Account'),
       'is_test' => TRUE,
       'is_active' => 1,
       'user_name' => '',
@@ -975,7 +965,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'title' => 'Test Contribution Page',
       'financial_type_id:name' => 'Donation',
       'currency' => 'USD',
-      'financial_account_id' => 1,
+      'financial_account_id' => $this->getFinancialAccountID('Donation'),
       'is_active' => 1,
       'is_allow_other_amount' => 1,
       'min_amount' => 10,
@@ -1071,7 +1061,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'scheduled_date' => date('Ymd'),
       'amount' => 100.00,
       'status_id' => '2',
-      'financial_type_id' => '1',
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'original_installment_amount' => 20,
       'frequency_interval' => 5,
       'frequency_unit' => 'year',
@@ -1112,7 +1102,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'receive_date' => date('Ymd'),
       'total_amount' => 100.00,
       'fee_amount' => 5.00,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'payment_instrument_id' => 1,
       'non_deductible_amount' => 10.00,
       'source' => 'SSF',
@@ -1365,7 +1355,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    */
   public function uFFieldCreate($params = []) {
     $params = array_merge([
-      'uf_group_id' => 1,
+      'uf_group_id' => $this->getProfileID('name_and_address'),
       'field_name' => 'first_name',
       'is_active' => 1,
       'is_required' => 1,
@@ -1394,7 +1384,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
         'entity_table' => 'civicrm_event',
         'entity_id' => 3,
         'weight' => 1,
-        'uf_group_id' => 1,
+        'uf_group_id' => $this->getProfileID('name_and_address'),
       ];
     }
     return $this->callAPISuccess('UFJoin', 'create', $params);
@@ -1659,8 +1649,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     ], $params);
 
     $result = $this->callAPISuccess('custom_field', 'create', $params);
-    // these 2 functions are called with force to flush static caches
-    CRM_Core_BAO_CustomField::getTableColumnGroup($result['id'], 1);
+    // Call getEnabledComponents with force to flush static caches
     CRM_Core_Component::getEnabledComponents(1);
     return $result;
   }
@@ -1758,7 +1747,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 1;');
 
     // Truncate resets the autoincrements, so re-apply separation
-    \Civi\Test::schema()->setAutoIncrement();
+    \Civi\Test::schema()->setAutoIncrement($tablesToTruncate);
   }
 
   /**
@@ -1840,9 +1829,16 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
   public function restoreDefaultPriceSetConfig(): void {
     CRM_Core_DAO::executeQuery("DELETE FROM civicrm_price_set WHERE name NOT IN('default_contribution_amount', 'default_membership_type_amount')");
     CRM_Core_DAO::executeQuery('UPDATE civicrm_price_set SET is_quick_config = 1, is_active = 1');
-    CRM_Core_DAO::executeQuery("UPDATE civicrm_price_set SET id = 1 WHERE name ='default_contribution_amount'");
-    CRM_Core_DAO::executeQuery("INSERT INTO `civicrm_price_field` (`id`, `price_set_id`, `name`, `label`, `html_type`, `is_enter_qty`, `help_pre`, `help_post`, `weight`, `is_display_amounts`, `options_per_line`, `is_active`, `is_required`, `active_on`, `expire_on`, `javascript`, `visibility_id`) VALUES (1, 1, 'contribution_amount', 'Contribution Amount', 'Text', 0, NULL, NULL, 1, 1, 1, 1, 1, NULL, NULL, NULL, 1)");
-    CRM_Core_DAO::executeQuery("INSERT INTO `civicrm_price_field_value` (`id`, `price_field_id`, `name`, `label`, `description`, `amount`, `count`, `max_value`, `weight`, `membership_type_id`, `membership_num_terms`, `is_default`, `is_active`, `financial_type_id`, `non_deductible_amount`) VALUES (1, 1, 'contribution_amount', 'Contribution Amount', NULL, '1', NULL, NULL, 1, NULL, NULL, 0, 1, 1, 0.00)");
+    // Recreate the seeded field & value for the default contribution price set,
+    // without assuming the ids the seed data gave them.
+    $priceSetID = CRM_Core_DAO::singleValueQuery("SELECT id FROM civicrm_price_set WHERE name = 'default_contribution_amount'");
+    CRM_Core_DAO::executeQuery("INSERT INTO `civicrm_price_field` (`price_set_id`, `name`, `label`, `html_type`, `is_enter_qty`, `help_pre`, `help_post`, `weight`, `is_display_amounts`, `options_per_line`, `is_active`, `is_required`, `active_on`, `expire_on`, `javascript`, `visibility_id`) VALUES (%1, 'contribution_amount', 'Contribution Amount', 'Text', 0, NULL, NULL, 1, 1, 1, 1, 1, NULL, NULL, NULL, 1)", [1 => [$priceSetID, 'Integer']]);
+    $priceFieldID = CRM_Core_DAO::singleValueQuery('SELECT LAST_INSERT_ID()');
+    CRM_Core_DAO::executeQuery("INSERT INTO `civicrm_price_field_value` (`price_field_id`, `name`, `label`, `description`, `amount`, `count`, `max_value`, `weight`, `membership_type_id`, `membership_num_terms`, `is_default`, `is_active`, `financial_type_id`, `non_deductible_amount`) VALUES (%1, 'contribution_amount', 'Contribution Amount', NULL, '1', NULL, NULL, 1, NULL, NULL, 0, 1, %2, 0.00)", [
+      1 => [$priceFieldID, 'Integer'],
+      2 => [CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Donation'), 'Integer'],
+    ]);
+    unset(Civi::$statics['CRM_Price_BAO_PriceSet']);
   }
 
   /**
@@ -1865,7 +1861,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
             'duration_unit' => 'year',
             'duration_interval' => 2,
             'period_type' => 'rolling',
-            'relationship_type_id' => 7,
+            'relationship_type_id' => $this->getRelationshipTypeID('Head of Household for'),
             'relationship_direction' => 'b_a',
             'visibility' => 'Public',
             'is_active' => 1,
@@ -1887,7 +1883,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
             'duration_unit' => 'lifetime',
             'duration_interval' => 1,
             'period_type' => 'rolling',
-            'relationship_type_id' => 7,
+            'relationship_type_id' => $this->getRelationshipTypeID('Head of Household for'),
             'relationship_direction' => 'b_a',
             'visibility' => 'Admin',
           ],
@@ -1895,8 +1891,8 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       )
       ->setDefaults([
         'domain_id' => 1,
-        'member_of_contact_id' => 1,
-        'financial_type_id' => 2,
+        'member_of_contact_id' => CRM_Core_BAO_Domain::getDomain()->contact_id,
+        'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
       ]
     )->execute();
   }
@@ -1924,6 +1920,11 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    * @param string $errorText
    */
   public function getAndCheck(array $params, int $id, string $entity, int $delete = 1, string $errorText = ''): void {
+    if (strtolower($entity) === 'participant' && isset($params['status_id'])) {
+      // Returning 'status_id' from Participant.get gives the status of a related activity.
+      $params['participant_status_id'] = $params['status_id'];
+      unset($params['status_id']);
+    }
 
     $result = $this->callAPISuccessGetSingle($entity, [
       'id' => $id,
@@ -2296,8 +2297,8 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'url_button' => 'https://www.paypal.com/en_US/i/btn/btn_xpressCheckout.gif',
       'class_name' => 'Payment_PayPalImpl',
       'billing_mode' => 3,
-      'financial_type_id' => 1,
-      'financial_account_id' => 12,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
+      'financial_account_id' => $this->getFinancialAccountID('Payment Processor Account'),
       // Credit card = 1 so can pass 'by accident'.
       'payment_instrument_id:name' => 'Debit Card',
     ], $params);
@@ -2418,7 +2419,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       $this->contributionCreate([
         'contact_id' => $this->ids['Contact']['individual_0'],
         'is_test' => 1,
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'invoice_id' => 'abcd',
         'trxn_id' => 345,
         'receive_date' => '2019-07-25 07:34:23',
@@ -2515,7 +2516,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $paramsSet['title'] = 'Price Set';
     $paramsSet['name'] = 'price_set';
     $paramsSet['is_active'] = FALSE;
-    $paramsSet['extends'] = 1;
+    $paramsSet['extends:name'] = ['CiviEvent'];
     $paramsSet['min_amount'] = $minAmt;
 
     $priceSetID = PriceSet::create(FALSE)->setValues($paramsSet)->execute()->first()['id'];
@@ -2608,7 +2609,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $paramsSet['name'] = $identifier;
     $paramsSet['is_active'] = TRUE;
     $paramsSet['financial_type_id:name'] = 'Event Fee';
-    $paramsSet['extends'] = 1;
+    $paramsSet['extends:name'] = ['CiviEvent'];
     $priceSet = $this->createTestEntity('PriceSet', $paramsSet, $identifier);
     if ($componentID) {
       CRM_Price_BAO_PriceSet::addTo('civicrm_' . $component, $componentID, $priceSet['id']);
@@ -2747,7 +2748,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     ];
     if ($context !== 'online' && $context !== 'payLater') {
       $compareParams = [
-        'to_financial_account_id' => 6,
+        'to_financial_account_id' => $this->getFinancialAccountID('Deposit Bank Account'),
         'total_amount' => (float) ($params['total_amount'] ?? 100.00),
         'status_id' => 1,
       ];
@@ -2757,7 +2758,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     }
     elseif ($context === 'online') {
       $compareParams = [
-        'to_financial_account_id' => 12,
+        'to_financial_account_id' => $this->getFinancialAccountID('Payment Processor Account'),
         'total_amount' => (float) ($params['total_amount'] ?? 100.00),
         'status_id' => 1,
         'payment_instrument_id' => $params['payment_instrument_id'] ?? 1,
@@ -2765,7 +2766,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     }
     elseif ($context === 'payLater') {
       $compareParams = [
-        'to_financial_account_id' => 7,
+        'to_financial_account_id' => $this->getFinancialAccountID('Accounts Receivable'),
         'total_amount' => (float) ($params['total_amount'] ?? 100.00),
         'status_id' => 2,
       ];
@@ -2782,13 +2783,13 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $compareParams = [
       'amount' => (float) ($params['total_amount'] ?? 100.00),
       'status_id' => 1,
-      'financial_account_id' => $params['financial_account_id'] ?? 1,
+      'financial_account_id' => $params['financial_account_id'] ?? $this->getFinancialAccountID('Donation'),
     ];
     if ($context === 'payLater') {
       $compareParams = [
         'amount' => (float) ($params['total_amount'] ?? 100.00),
         'status_id' => 3,
-        'financial_account_id' => $params['financial_account_id'] ?? 1,
+        'financial_account_id' => $params['financial_account_id'] ?? $this->getFinancialAccountID('Donation'),
       ];
     }
     $this->assertDBCompareValues('CRM_Financial_DAO_FinancialItem', $fitemParams, $compareParams);
@@ -2802,8 +2803,8 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
         'id' => $maxTrxn['financial_trxn_id'],
       ];
       $compareParams = [
-        'to_financial_account_id' => 5,
-        'from_financial_account_id' => 6,
+        'to_financial_account_id' => $this->getFinancialAccountID('Banking Fees'),
+        'from_financial_account_id' => $this->getFinancialAccountID('Deposit Bank Account'),
         'total_amount' => 50,
         'status_id' => 1,
       ];
@@ -2816,7 +2817,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       $compareParams = [
         'amount' => 50.00,
         'status_id' => 1,
-        'financial_account_id' => 5,
+        'financial_account_id' => $this->getFinancialAccountID('Banking Fees'),
       ];
       $this->assertDBCompareValues('CRM_Financial_DAO_FinancialItem', $fitemParams, $compareParams);
     }
@@ -2825,17 +2826,6 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     // Be really careful not to remove or bypass this without ensuring stray rows do not re-appear
     // when calling completeTransaction or repeatTransaction.
     $this->callAPISuccessGetCount('FinancialItem', ['description' => 'Sales Tax', 'amount' => 0], 0);
-  }
-
-  /**
-   * Return financial type id on basis of name
-   *
-   * @param string $name Financial type m/c name
-   *
-   * @return int
-   */
-  public function getFinancialTypeID(string $name): int {
-    return CRM_Core_PseudoConstant::getKey('CRM_Contribute_DAO_Contribution', 'financial_type_id', $name);
   }
 
   /**
@@ -2976,7 +2966,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       ], 'special')['id'];
       $contributionPageID = $this->createTestEntity('ContributionPage', [
         'title' => 'Test Contribution Page',
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'currency' => 'NZD',
         'goal_amount' => 50,
         'is_pay_later' => 1,
@@ -2986,7 +2976,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       $priceSetID = $this->createTestEntity('PriceSet', [
         'is_quick_config' => 0,
         'extends' => CRM_Core_Component::getComponentID('CiviMember'),
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'title' => 'my Page',
         'name' => 'member_not_quick_config',
       ])['id'];
@@ -3488,7 +3478,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
           'total_amount' => 300,
           'currency' => 'USD',
           'contact_id' => $contactID,
-          'financial_type_id' => 4,
+          'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
         ],
         'line_items' => [
           [
@@ -3497,7 +3487,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
             'entity_table' => 'civicrm_participant',
             'entity_id.event_id' => $this->getEventID('PaidEvent'),
             'entity_id.role_id' => 1,
-            'entity_id.status_id' => 14,
+            'entity_id.status_id' => $this->getParticipantStatusID('Pending refund'),
             'entity_id.fee_currency' => 'USD',
             'entity_id.contact_id' => $this->individualCreate(),
           ],
@@ -3508,7 +3498,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
             'entity_table' => 'civicrm_participant',
             'entity_id.event_id' => $this->getEventID('PaidEvent'),
             'entity_id.role_id' => 1,
-            'entity_id.status_id' => 14,
+            'entity_id.status_id' => $this->getParticipantStatusID('Pending refund'),
             'entity_id.fee_currency' => 'USD',
             'entity_id.contact_id' => $contactID,
           ],
@@ -3519,7 +3509,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'total_amount' => 300,
       'currency' => 'USD',
       'contact_id' => $contactID,
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'line_items' => [
         [
           'line_item' => [
@@ -3533,10 +3523,10 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
             ],
           ],
           'params' => [
-            'financial_type_id' => 4,
+            'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
             'event_id' => $this->getEventID('PaidEvent'),
             'role_id' => 1,
-            'status_id' => 14,
+            'status_id' => $this->getParticipantStatusID('Pending refund'),
             'fee_currency' => 'USD',
             'contact_id' => $this->individualCreate(),
           ],
@@ -3553,10 +3543,10 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
             ],
           ],
           'params' => [
-            'financial_type_id' => 4,
+            'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
             'event_id' => $this->getEventID('PaidEvent'),
             'role_id' => 1,
-            'status_id' => 14,
+            'status_id' => $this->getParticipantStatusID('Pending refund'),
             'fee_currency' => 'USD',
             'contact_id' => $contactID,
           ],
@@ -3644,6 +3634,109 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       }
       $this->assertEquals($taxTotal, (float) ($contribution['tax_amount'] ?? 0));
       $this->assertEquals($total + $taxTotal, $contribution['total_amount']);
+    }
+  }
+
+  /**
+   * Validate financial trxns & financial items recorded against every contribution.
+   *
+   * For every contribution with a financial trxn:
+   * 1. Each trxn's total_amount must equal the sum of what it has allocated to
+   *    civicrm_financial_item.
+   * 2. The sum of its trxns with status_id Completed/Refunded/Chargeback and
+   *    is_payment = 1 must equal paid_amount - matching
+   *    ContributionGetSpecProvider::calculateAmountPaid()'s own definition.
+   * 3. At zero balance, each financial item's amount must equal the sum of its
+   *    is_payment = 1-linked allocations - matching Payment::getPayableItems()'s
+   *    "paid" calculation. Not asserted while partially paid, since which items
+   *    absorbed a partial payment is allocation-dependent.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  protected function validateAllFinancialTrxns(): void {
+    $paidStatusIDs = array_column(\Civi::entity('Contribution')->getOptions('contribution_status_id'), 'id', 'name');
+    $paidStatusIDs = [
+      (int) $paidStatusIDs['Completed'],
+      (int) $paidStatusIDs['Refunded'],
+      (int) $paidStatusIDs['Chargeback'],
+    ];
+
+    $contributionIDs = EntityFinancialTrxn::get(FALSE)
+      ->addWhere('entity_table', '=', 'civicrm_contribution')
+      ->addSelect('entity_id')
+      ->execute()->column('entity_id');
+    foreach (array_unique($contributionIDs) as $contributionID) {
+      $trxnLinks = EntityFinancialTrxn::get(FALSE)
+        ->addWhere('entity_table', '=', 'civicrm_contribution')
+        ->addWhere('entity_id', '=', $contributionID)
+        ->addSelect('financial_trxn_id', 'financial_trxn_id.total_amount', 'financial_trxn_id.is_payment', 'financial_trxn_id.status_id')
+        ->execute();
+
+      $paymentTotal = 0;
+      foreach ($trxnLinks as $trxnLink) {
+        $financialTrxnID = $trxnLink['financial_trxn_id'];
+        $totalAmount = (float) $trxnLink['financial_trxn_id.total_amount'];
+
+        $itemLinks = EntityFinancialTrxn::get(FALSE)
+          ->addWhere('entity_table', '=', 'civicrm_financial_item')
+          ->addWhere('financial_trxn_id', '=', $financialTrxnID)
+          ->addSelect('amount')
+          ->execute();
+        $itemTotal = 0;
+        foreach ($itemLinks as $itemLink) {
+          $itemTotal += $itemLink['amount'];
+        }
+        $this->assertEquals(
+          round($totalAmount, 2),
+          round($itemTotal, 2),
+          "FinancialTrxn $financialTrxnID (contribution $contributionID) total_amount does not match the sum of its allocated financial items ({$itemLinks->count()} found)."
+        );
+
+        if ($trxnLink['financial_trxn_id.is_payment'] && in_array((int) $trxnLink['financial_trxn_id.status_id'], $paidStatusIDs, TRUE)) {
+          $paymentTotal += $totalAmount;
+        }
+      }
+
+      $contribution = Contribution::get(FALSE)
+        ->addWhere('id', '=', $contributionID)
+        ->addSelect('paid_amount', 'balance_amount')
+        ->execute()->first();
+      $this->assertEquals(
+        round((float) ($contribution['paid_amount'] ?? 0), 2),
+        round($paymentTotal, 2),
+        "Contribution $contributionID: sum of is_payment trxns in Completed/Refunded/Chargeback status does not match paid_amount."
+      );
+
+      if (round((float) ($contribution['balance_amount'] ?? 0), 2) === 0.0) {
+        $lineItemIDs = LineItem::get(FALSE)
+          ->addWhere('contribution_id', '=', $contributionID)
+          ->addSelect('id')
+          ->execute()->column('id');
+        if (!empty($lineItemIDs)) {
+          $financialItems = FinancialItem::get(FALSE)
+            ->addWhere('entity_table', '=', 'civicrm_line_item')
+            ->addWhere('entity_id', 'IN', $lineItemIDs)
+            ->addSelect('id', 'amount')
+            ->execute();
+          foreach ($financialItems as $financialItem) {
+            $paidLinks = EntityFinancialTrxn::get(FALSE)
+              ->addWhere('entity_table', '=', 'civicrm_financial_item')
+              ->addWhere('entity_id', '=', $financialItem['id'])
+              ->addWhere('financial_trxn_id.is_payment', '=', TRUE)
+              ->addSelect('amount')
+              ->execute();
+            $paidTotal = 0;
+            foreach ($paidLinks as $paidLink) {
+              $paidTotal += $paidLink['amount'];
+            }
+            $this->assertEquals(
+              round((float) $financialItem['amount'], 2),
+              round($paidTotal, 2),
+              "FinancialItem {$financialItem['id']} (contribution $contributionID, zero balance) amount does not match the sum of its is_payment-linked allocations."
+            );
+          }
+        }
+      }
     }
   }
 
@@ -3878,15 +3971,16 @@ WHERE a1.is_primary = 0
    * Ensure the default price set & field exist for memberships.
    */
   protected function ensureMembershipPriceSetExists(): void {
-    CRM_Core_DAO::executeQuery("INSERT INTO civicrm_price_set (`id`, `name`, `title`, `extends`)
-      VALUES (2, 'default_membership_type_amount', 'Membership Amount', 3)
-      ON DUPLICATE KEY UPDATE `name` = 'default_membership_type_amount', title = 'Membership Amount';
-    ");
-    CRM_Core_DAO::executeQuery("INSERT INTO civicrm_price_field
-      (`id`, `name`, `price_set_id`, `label`, `html_type`)
-      VALUES (2, 1, 2, 'Membership Amount', 'Radio')
-      ON DUPLICATE KEY UPDATE `name` = '1', price_set_id = 1, label =  'Membership Amount', html_type = 'Radio'
-    ");
+    $priceSetID = CRM_Core_DAO::singleValueQuery("SELECT id FROM civicrm_price_set WHERE name = 'default_membership_type_amount'");
+    if (!$priceSetID) {
+      CRM_Core_DAO::executeQuery("INSERT INTO civicrm_price_set (`name`, `title`, `extends`)
+        VALUES ('default_membership_type_amount', 'Membership Amount', 3)");
+      $priceSetID = CRM_Core_DAO::singleValueQuery('SELECT LAST_INSERT_ID()');
+    }
+    if (!CRM_Core_DAO::singleValueQuery('SELECT id FROM civicrm_price_field WHERE price_set_id = %1', [1 => [$priceSetID, 'Integer']])) {
+      CRM_Core_DAO::executeQuery("INSERT INTO civicrm_price_field (`name`, `price_set_id`, `label`, `html_type`)
+        VALUES ('1', %1, 'Membership Amount', 'Radio')", [1 => [$priceSetID, 'Integer']]);
+    }
   }
 
   /**
@@ -4037,6 +4131,42 @@ WHERE table_schema = DATABASE()");
       ->execute()->first()['data'];
     unset($data['id']);
     return $data;
+  }
+
+  /**
+   * Execute a callback. Capture and return any PHP errors (which match the given filter).
+   *
+   * @param int $errorMask
+   *   Ex: E_USER_DEPRECATED|E_DEPRECATED
+   * @param callable $callback
+   * @return string[]
+   */
+  public static function captureErrors(int $errorMask, callable $callback): array {
+    $deprecations = [];
+
+    $previousHandler = set_error_handler(
+      function (int $errno, string $errstr, string $errfile = '', int $errline = 0) use (&$deprecations, &$previousHandler, $errorMask) {
+        if ($errno & $errorMask) {
+          $deprecations[] = $errstr;
+          return TRUE;
+        }
+        elseif ($previousHandler !== NULL) {
+          return (bool) $previousHandler($errno, $errstr, $errfile, $errline);
+        }
+        else {
+          return FALSE;
+        }
+      }
+    );
+
+    try {
+      $callback();
+    }
+    finally {
+      restore_error_handler();
+    }
+
+    return $deprecations;
   }
 
 }

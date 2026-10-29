@@ -27,7 +27,6 @@ body {
 .crm-container tr,
 .crm-container td,
 .crm-container details {
-  background-color: transparent;
   background: transparent;
   border: 0;
   padding: 0;
@@ -35,8 +34,6 @@ body {
   border-radius: unset;
   height: unset;
   color: inherit;
-  line-height: inherit;
-  font-family: inherit;
   font: inherit;
   font-size: inherit;
 }
@@ -201,15 +198,15 @@ body {
 .crm-container .upper {
   text-transform: uppercase;
 }
-.crm-container h3,
-#bootstrap-theme h3:not(.crm-dashlet-header h3) {
-  background-color: var(--crm-heading-bg-color);
+.crm-container h3 {
+  margin: var(--crm-heading-margin);
   font-size: var(--crm-l-reg-1);
-  font-weight: bold;
+}
+.crm-header-shaded {
+  background-color: var(--crm-heading-bg-color);
   color: var(--crm-heading-color);
   padding: var(--crm-heading-padding);
   border-radius: var(--crm-heading-radius);
-  margin: var(--crm-heading-margin);
 }
 
 /* Definition lists */
@@ -440,8 +437,29 @@ dl dl {
 
 #crm-container /* applied to #crm not .crm to apply only once */ {
   max-width: 100%;
+  box-sizing: border-box; /* keeps the page padding inside the 100vh */
   min-height: 100vh;
   padding: var(--crm-page-padding);
+  display: flex;
+  flex-direction: column;
+}
+/* Joomla nests the footer in #crm-content */
+#crm-container > #crm-content {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+/* Fills the space below short pages, so the footer can stick to the viewport bottom
+   there; on long pages it has no room to move and sits right after the content */
+.crm-footer-area {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+#civicrm-footer {
+  position: sticky;
+  bottom: 1rem;
 }
 .crm-container .crm-flex-box {
   display: flex;

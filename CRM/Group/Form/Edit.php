@@ -179,12 +179,12 @@ class CRM_Group_Form_Edit extends CRM_Core_Form {
     }
 
     if (!$this->isPermitMailingGroupAccess()) {
-      $groupTypes = CRM_Core_OptionGroup::values('group_type', TRUE);
-      if ($defaults['group_type'][$groupTypes['Mailing List']] == 1) {
-        $this->assign('freezeMailingList', $groupTypes['Mailing List']);
+      $mailingListType = CRM_Core_PseudoConstant::getKey('CRM_Contact_BAO_Group', 'group_type', 'Mailing List');
+      if (!empty($defaults['group_type'][$mailingListType])) {
+        $this->assign('freezeMailingList', $mailingListType);
       }
       else {
-        $this->assign('hideMailingList', $groupTypes['Mailing List']);
+        $this->assign('hideMailingList', $mailingListType);
       }
     }
 
@@ -220,7 +220,7 @@ class CRM_Group_Form_Edit extends CRM_Core_Form {
     $groupTypes = CRM_Core_OptionGroup::values('group_type', TRUE);
 
     if (isset($this->_id) && !empty($this->_groupValues['saved_search_id'])) {
-      unset($groupTypes['Access Control']);
+      $groupTypes = array_diff($groupTypes, [CRM_Core_PseudoConstant::getKey('CRM_Contact_BAO_Group', 'group_type', 'Access Control')]);
     }
 
     if (!empty($groupTypes)) {
@@ -288,8 +288,12 @@ WHERE  title = %1
 
       $grpCnt = CRM_Core_DAO::singleValueQuery($query, $params);
       if ($grpCnt) {
-        $errors['title'] = ts('Group \'%1\' already exists.', [1 => $fields['title']]);
+        $errors['title'] = ts("Group '%1' already exists.", [1 => $fields['title']]);
       }
+    }
+
+    if (!CRM_Contact_BAO_Group::checkReservedGroupPermission($self->_id, $fields['is_reserved'] ?? NULL)) {
+      $errors['is_reserved'] = ts('You do not have permission to alter reserved groups.');
     }
 
     return empty($errors) ? TRUE : $errors;
@@ -338,7 +342,7 @@ WHERE  title = %1
       // Set the entity id so it is available to postProcess hook consumers
       $this->setEntityId($group->id);
 
-      CRM_Core_Session::setStatus(ts('The Group \'%1\' has been saved.', [1 => $group->title]), ts('Group Saved'), 'success');
+      CRM_Core_Session::setStatus(ts("The Group '%1' has been saved.", [1 => $group->title]), ts('Group Saved'), 'success');
 
       // Add context to the session, in case we are adding members to the group
       if ($this->_action & CRM_Core_Action::ADD) {

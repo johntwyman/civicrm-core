@@ -13,15 +13,15 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
     $userID = $this->createLoggedInUser();
 
     $addTimeline = civicrm_api3('Case', 'addtimeline', [
-      'case_id' => 1,
+      'case_id' => $this->ids['Case']['fixture'],
       'timeline' => "standard_timeline",
     ]);
 
-    $query = CRM_Case_BAO_Case::getCaseActivityQuery('recent', $userID, ' civicrm_case.id IN( 1 )');
+    $query = CRM_Case_BAO_Case::getCaseActivityQuery('recent', $userID, " civicrm_case.id IN({$this->ids['Case']['fixture']})");
     $res = CRM_Core_DAO::executeQuery($query);
     $openCaseType = CRM_Core_PseudoConstant::getKey('CRM_Activity_BAO_Activity', 'activity_type_id', 'Open Case');
     while ($res->fetch()) {
-      $message = 'Failed asserting that the latest activity from Case ID 1 was "Open Case":';
+      $message = 'Failed asserting that the latest activity from the case was "Open Case":';
       $this->assertEquals($openCaseType, $res->activity_type_id, $message . PHP_EOL . print_r($res, TRUE));
     }
   }
@@ -37,7 +37,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
   public function testAddCaseToContact(): void {
     $this->createLoggedInUser();
     $params = [
-      'case_id' => 1,
+      'case_id' => $this->ids['Case']['fixture'],
       'contact_id' => $this->individualCreate(),
     ];
     CRM_Case_BAO_CaseContact::writeRecord($params);
@@ -223,13 +223,13 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
   }
 
   public function testGetCaseType(): void {
-    $caseTypeLabel = CRM_Case_BAO_Case::getCaseType(1);
+    $caseTypeLabel = CRM_Case_BAO_Case::getCaseType($this->ids['Case']['fixture']);
     $this->assertEquals('Housing Support', $caseTypeLabel);
   }
 
   public function testRetrieveCaseIdsByContactId(): void {
-    $caseIds = CRM_Case_BAO_Case::retrieveCaseIdsByContactId(3, FALSE, 'housing_support');
-    $this->assertEquals([1], $caseIds);
+    $caseIds = CRM_Case_BAO_Case::retrieveCaseIdsByContactId($this->ids['Contact']['site_admin'], FALSE, 'housing_support');
+    $this->assertEquals([$this->ids['Case']['fixture']], $caseIds);
   }
 
   /**
@@ -513,12 +513,12 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
     $case_id = $caseObj->id;
 
     // Sanity check to make sure we'll be testing what we think we're testing.
-    $this->assertEquals(1, $caseObj->case_type_id);
+    $this->assertEquals($this->caseTypeId, $caseObj->case_type_id);
 
     // Get the case type
     $result = $this->callAPISuccess('CaseType', 'get', [
       'sequential' => 1,
-      'id' => 1,
+      'id' => $this->caseTypeId,
     ]);
     $caseType = array_shift($result['values']);
     $activityTypeName = $caseType['definition']['activityTypes'][1]['name'];
@@ -800,7 +800,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
       // and sometimes you get one returned and sometimes the other. If the
       // second case type timeline is altered in future it's possible the
       // same problem could intermittently occur.
-      'case_type_id' => 2,
+      'case_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Case_BAO_Case', 'case_type_id', 'adult_day_care_referral'),
       'case_type' => 'adult_day_care_referral',
     ]);
     $individual[2] = $this->individualCreate([], 1);
@@ -808,7 +808,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
     // create a second case with a different start date
     $other_date = strtotime($input['other_date']);
     $caseObj[2] = $this->createCase($individual[2], $loggedInUser, [
-      'case_type_id' => 2,
+      'case_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Case_BAO_Case', 'case_type_id', 'adult_day_care_referral'),
       'case_type' => 'adult_day_care_referral',
       'start_date' => date('Y-m-d', $other_date),
       'start_date_time' => date('YmdHis', $other_date),
@@ -846,6 +846,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
         $expected[$type][$counter]['case_id'] = $caseObj[$offset]->id;
         $expected[$type][$counter]['contact_id'] = $individual[$offset];
         $expected[$type][$counter]['activity_type_id'] = $activity_type_map[$expected[$type][$counter]['activity_type_id']];
+        $expected[$type][$counter]['case_type_id'] = (int) CRM_Core_PseudoConstant::getKey('CRM_Case_BAO_Case', 'case_type_id', $expected[$type][$counter]['case_type_id']);
         $expected[$type][$counter]['case_start_date'] = $caseObj[$offset]->start_date;
         // To avoid a millisecond rollover bug, where e.g. the dataprovider
         // runs a whole second before this test, we make this relative to the
@@ -878,7 +879,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -894,7 +895,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -911,7 +912,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Open Case',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 2,
               'case_start_date' => 'REPLACE_ME',
@@ -927,7 +928,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Open Case',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 2,
               'case_start_date' => 'REPLACE_ME',
@@ -953,7 +954,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -968,7 +969,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -985,7 +986,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Open Case',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 2,
               'case_start_date' => 'REPLACE_ME',
@@ -1001,7 +1002,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Open Case',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 2,
               'case_start_date' => 'REPLACE_ME',
@@ -1027,7 +1028,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -1042,7 +1043,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -1059,7 +1060,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Open Case',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 2,
               'case_start_date' => 'REPLACE_ME',
@@ -1085,7 +1086,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -1100,7 +1101,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Medical evaluation',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 1,
               'case_start_date' => 'REPLACE_ME',
@@ -1117,7 +1118,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
               'phone' => NULL,
               'contact_type' => 'Individual',
               'activity_type_id' => 'Open Case',
-              'case_type_id' => 2,
+              'case_type_id' => 'adult_day_care_referral',
               'case_status_id' => 1,
               'status_id' => 2,
               'case_start_date' => 'REPLACE_ME',
@@ -1291,7 +1292,7 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
     $caseResult = \Civi\Api4\CiviCase::get(TRUE)
       ->addWhere('id', '=', $caseObj->id)
       ->execute()->first();
-    $this->assertEquals(1, $caseResult['case_type_id']);
+    $this->assertEquals($this->caseTypeId, $caseResult['case_type_id']);
     $this->assertEquals('Case Subject', $caseResult['subject']);
     $caseContact = \Civi\Api4\CaseContact::get(TRUE)
       ->addWhere('case_id', '=', $caseObj->id)
@@ -1371,6 +1372,75 @@ class CRM_Case_BAO_CaseTest extends CiviCaseTestCase {
     ]);
     $this->assertEquals(0, CRM_Case_BAO_Case::getCases(TRUE, ['type' => 'upcoming'], 'dashboard', TRUE));
     $this->assertEquals(1, CRM_Case_BAO_Case::getCases(TRUE, ['type' => 'recent'], 'dashboard', TRUE));
+  }
+
+  private function countCaseActivities(int $caseId, int $activityId): int {
+    return \Civi\Api4\CaseActivity::get(FALSE)
+      ->selectRowCount()
+      ->addWhere('case_id', '=', $caseId)
+      ->addWhere('activity_id', '=', $activityId)
+      ->execute()
+      ->rowCount;
+  }
+
+  /**
+   * Test the (un)assignment of activities to cases
+   *
+   * @see CRM_Case_BAO_Case::updateCaseActivity()
+   */
+  public function testUpdateCaseActivity(): void {
+    $loggedInUserId = $this->createLoggedInUser();
+    $clientId = $this->individualCreate();
+    $firstCase = $this->createCase($clientId, $loggedInUserId);
+    $secondCase = $this->createCase($clientId, $loggedInUserId);
+
+    // Create an activity with no case_id
+    $activity = \Civi\Api4\Activity::create(FALSE)
+      ->addValue('source_contact_id', $loggedInUserId)
+      ->addValue('target_contact_id', [$clientId])
+      ->addValue('activity_type_id:name', 'Open Case')
+      ->addValue('case_id', '')
+      ->execute()
+      ->first();
+
+    $this->assertEquals(0, $this->countCaseActivities($firstCase->id, $activity['id']));
+    $this->assertEquals(0, $this->countCaseActivities($secondCase->id, $activity['id']));
+
+    // Link the activity to the first case
+    \Civi\Api4\Activity::update(FALSE)
+      ->addWhere('id', '=', $activity['id'])
+      ->addValue('case_id', $firstCase->id)
+      ->execute();
+
+    $this->assertEquals(1, $this->countCaseActivities($firstCase->id, $activity['id']));
+    $this->assertEquals(0, $this->countCaseActivities($secondCase->id, $activity['id']));
+
+    // Link the activity to the first case again
+    \Civi\Api4\Activity::update(FALSE)
+      ->addWhere('id', '=', $activity['id'])
+      ->addValue('case_id', $firstCase->id)
+      ->execute();
+
+    $this->assertEquals(1, $this->countCaseActivities($firstCase->id, $activity['id']));
+    $this->assertEquals(0, $this->countCaseActivities($secondCase->id, $activity['id']));
+
+    // Link the activity to the second case
+    \Civi\Api4\Activity::update(FALSE)
+      ->addWhere('id', '=', $activity['id'])
+      ->addValue('case_id', $secondCase->id)
+      ->execute();
+
+    $this->assertEquals(0, $this->countCaseActivities($firstCase->id, $activity['id']));
+    $this->assertEquals(1, $this->countCaseActivities($secondCase->id, $activity['id']));
+
+    // Unset the case_id of the activity
+    \Civi\Api4\Activity::update(FALSE)
+      ->addWhere('id', '=', $activity['id'])
+      ->addValue('case_id', NULL)
+      ->execute();
+
+    $this->assertEquals(0, $this->countCaseActivities($firstCase->id, $activity['id']));
+    $this->assertEquals(0, $this->countCaseActivities($secondCase->id, $activity['id']));
   }
 
 }

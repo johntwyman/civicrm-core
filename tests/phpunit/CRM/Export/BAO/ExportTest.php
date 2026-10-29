@@ -307,10 +307,10 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
       'Membership Expiration Date' => $membership['end_date'],
       'Membership Source' => 'Payment',
       'Membership Status' => 'Pending',
-      'Membership ID' => '2',
+      'Membership ID' => $membership['id'],
       'Primary Member ID' => '',
       'Max Related' => '',
-      'Recurring Contribution ID' => 1,
+      'Recurring Contribution ID' => $this->ids['ContributionRecur']['default'],
       'Campaign ID' => '',
       'Status Override' => '',
       'Total Amount' => '200.00',
@@ -332,7 +332,7 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
     $this->setUpActivityExportData();
     $selectedFields = [
       ['contact_type' => 'Individual', 'name' => 'display_name'],
-      ['contact_type' => 'Individual', 'relationship_type_id' => '5', 'relationship_direction' => 'a_b', 'name' => 'display_name'],
+      ['contact_type' => 'Individual', 'relationship_type_id' => $this->getRelationshipTypeID('Employee of'), 'relationship_direction' => 'a_b', 'name' => 'display_name'],
     ];
 
     $this->doExportTest([
@@ -440,7 +440,7 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
     $contactID2 = $this->individualCreate([], 1);
 
     $case = $this->callAPISuccess('case', 'create', [
-      'case_type_id' => 1,
+      'case_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Case_BAO_Case', 'case_type_id', 'housing_support'),
       'subject' => 'blah',
       'contact_id' => $contactID1,
     ]);
@@ -518,8 +518,8 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
 
     $selectedFields = [
       ['contact_type' => 'Individual', 'name' => 'email'],
-      ['contact_type' => 'Individual', 'name' => 'email', 'location_type_id' => '1'],
-      ['contact_type' => 'Individual', 'name' => 'email', 'location_type_id' => '2'],
+      ['contact_type' => 'Individual', 'name' => 'email', 'location_type_id' => $this->getLocationTypeID('Home')],
+      ['contact_type' => 'Individual', 'name' => 'email', 'location_type_id' => $this->getLocationTypeID('Work')],
     ];
     $this->doExportTest([
       'ids' => [],
@@ -925,7 +925,7 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
 
     $this->doExportTest(['fields' => $fields, 'ids' => [$this->contactIDs[0]]]);
     foreach ($this->csv->getRecords() as $row) {
-      $this->assertEquals('BillingMobile3', $row['Billing-Phone-Much Much longer than just phone']);
+      $this->assertEquals('BillingMobile' . $this->contactIDs[0], $row['Billing-Phone-Much Much longer than just phone']);
       $this->assertEquals('', $row['Billing-Phone-Phone']);
       $this->assertEquals('Much Much longer than just phone', $row['Spouse of-Phone Type']);
       $this->assertEquals('Much Much longer than just phone', $row['Phone Type']);
@@ -1007,6 +1007,9 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
       }
     }
 
+    $spouseOf = $this->getRelationshipTypeID('Spouse of');
+    $householdMemberOf = $this->getRelationshipTypeID('Household Member of');
+    $employeeOf = $this->getRelationshipTypeID('Employee of');
     $this->assertEquals([
       'contact_id' => '`contact_id` varchar(64)',
       'billing_city' => '`billing_city` varchar(64)',
@@ -1024,24 +1027,24 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
       'whare_kai_city' => '`whare_kai_city` varchar(64)',
       'whare_kai_street_address' => '`whare_kai_street_address` varchar(96)',
       'whare_kai_postal_code' => '`whare_kai_postal_code` varchar(64)',
-      '2_a_b_billing_city' => '`2_a_b_billing_city` varchar(64)',
-      '2_a_b_home_city' => '`2_a_b_home_city` varchar(64)',
-      '2_a_b_main_city' => '`2_a_b_main_city` varchar(64)',
-      '2_a_b_other_city' => '`2_a_b_other_city` varchar(64)',
-      '2_a_b_whare_kai_city' => '`2_a_b_whare_kai_city` varchar(64)',
-      '2_a_b_city' => '`2_a_b_city` varchar(64)',
-      '8_a_b_billing_city' => '`8_a_b_billing_city` varchar(64)',
-      '8_a_b_home_city' => '`8_a_b_home_city` varchar(64)',
-      '8_a_b_main_city' => '`8_a_b_main_city` varchar(64)',
-      '8_a_b_other_city' => '`8_a_b_other_city` varchar(64)',
-      '8_a_b_whare_kai_city' => '`8_a_b_whare_kai_city` varchar(64)',
-      '8_a_b_city' => '`8_a_b_city` varchar(64)',
-      '5_a_b_billing_city' => '`5_a_b_billing_city` varchar(64)',
-      '5_a_b_home_city' => '`5_a_b_home_city` varchar(64)',
-      '5_a_b_main_city' => '`5_a_b_main_city` varchar(64)',
-      '5_a_b_other_city' => '`5_a_b_other_city` varchar(64)',
-      '5_a_b_whare_kai_city' => '`5_a_b_whare_kai_city` varchar(64)',
-      '5_a_b_city' => '`5_a_b_city` varchar(64)',
+      "{$spouseOf}_a_b_billing_city" => "`{$spouseOf}_a_b_billing_city` varchar(64)",
+      "{$spouseOf}_a_b_home_city" => "`{$spouseOf}_a_b_home_city` varchar(64)",
+      "{$spouseOf}_a_b_main_city" => "`{$spouseOf}_a_b_main_city` varchar(64)",
+      "{$spouseOf}_a_b_other_city" => "`{$spouseOf}_a_b_other_city` varchar(64)",
+      "{$spouseOf}_a_b_whare_kai_city" => "`{$spouseOf}_a_b_whare_kai_city` varchar(64)",
+      "{$spouseOf}_a_b_city" => "`{$spouseOf}_a_b_city` varchar(64)",
+      "{$householdMemberOf}_a_b_billing_city" => "`{$householdMemberOf}_a_b_billing_city` varchar(64)",
+      "{$householdMemberOf}_a_b_home_city" => "`{$householdMemberOf}_a_b_home_city` varchar(64)",
+      "{$householdMemberOf}_a_b_main_city" => "`{$householdMemberOf}_a_b_main_city` varchar(64)",
+      "{$householdMemberOf}_a_b_other_city" => "`{$householdMemberOf}_a_b_other_city` varchar(64)",
+      "{$householdMemberOf}_a_b_whare_kai_city" => "`{$householdMemberOf}_a_b_whare_kai_city` varchar(64)",
+      "{$householdMemberOf}_a_b_city" => "`{$householdMemberOf}_a_b_city` varchar(64)",
+      "{$employeeOf}_a_b_billing_city" => "`{$employeeOf}_a_b_billing_city` varchar(64)",
+      "{$employeeOf}_a_b_home_city" => "`{$employeeOf}_a_b_home_city` varchar(64)",
+      "{$employeeOf}_a_b_main_city" => "`{$employeeOf}_a_b_main_city` varchar(64)",
+      "{$employeeOf}_a_b_other_city" => "`{$employeeOf}_a_b_other_city` varchar(64)",
+      "{$employeeOf}_a_b_whare_kai_city" => "`{$employeeOf}_a_b_whare_kai_city` varchar(64)",
+      "{$employeeOf}_a_b_city" => "`{$employeeOf}_a_b_city` varchar(64)",
     ], $this->processor->getSQLColumns());
   }
 
@@ -1056,7 +1059,7 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
 
     //export the master address for contact B
     $selectedFields = [
-      ['contact_type' => 'Individual', 'name' => 'master_id', 'location_type_id' => 1],
+      ['contact_type' => 'Individual', 'name' => 'master_id', 'location_type_id' => $this->getLocationTypeID('Home')],
     ];
     $this->doExportTest([
       'fields' => $selectedFields,
@@ -1074,7 +1077,7 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
    */
   public function testMergeSameAddressSpecifyFields(): void {
     $this->setUpContactSameAddressExportData();
-    $this->doExportTest(['mergeSameAddress' => TRUE, 'fields' => [['contact_type' => 'Individual', 'name' => 'master_id', 'location_type_id' => 1]]]);
+    $this->doExportTest(['mergeSameAddress' => TRUE, 'fields' => [['contact_type' => 'Individual', 'name' => 'master_id', 'location_type_id' => $this->getLocationTypeID('Home')]]]);
   }
 
   /**
@@ -1211,6 +1214,28 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
     ], $this->csv->nth(0));
     // 3 contacts merged to 2.
     $this->assertCount(2, $this->csv);
+  }
+
+  /**
+   * Test that greetings exceeding max column length are ellipsified on same address merge.
+   */
+  public function testMergeSameAddressGreetingEllipsify(): void {
+    $this->setUpContactExportData();
+    $otherPostalGreeting = array_search(ts('Other'), CRM_Export_Form_Select::getGreetingOptions()['postal_greeting']);
+    $this->doExportTest([
+      'mergeSameAddress' => TRUE,
+      'exportParams' => [
+        'postal_greeting' => (string) $otherPostalGreeting,
+        'postal_greeting_other' => str_repeat('x', 300),
+        'mergeOption' => '1',
+        'mapping' => '',
+      ],
+    ]);
+    $expected = str_repeat('x', 252) . '...';
+    $this->assertExpectedOutput([
+      'Postal Greeting' => $expected,
+      'Email Greeting' => $expected,
+    ], $this->csv->nth(0));
   }
 
   /**
@@ -2977,10 +3002,10 @@ class CRM_Export_BAO_ExportTest extends CiviUnitTestCase {
     $fields = [
       ['contact_type' => 'Individual', 'name' => 'first_name'],
       ['contact_type' => 'Individual', 'name' => 'last_name'],
-      ['contact_type' => 'Individual', 'name' => 'street_address', 'location_type_id' => 1],
-      ['contact_type' => 'Individual', 'name' => 'city', 'location_type_id' => 1],
-      ['contact_type' => 'Individual', 'name' => 'country', 'location_type_id' => 1],
-      ['contact_type' => 'Individual', 'name' => 'email', 'location_type_id' => 1],
+      ['contact_type' => 'Individual', 'name' => 'street_address', 'location_type_id' => $this->getLocationTypeID('Home')],
+      ['contact_type' => 'Individual', 'name' => 'city', 'location_type_id' => $this->getLocationTypeID('Home')],
+      ['contact_type' => 'Individual', 'name' => 'country', 'location_type_id' => $this->getLocationTypeID('Home')],
+      ['contact_type' => 'Individual', 'name' => 'email', 'location_type_id' => $this->getLocationTypeID('Home')],
     ];
     $processor = new CRM_Export_BAO_ExportProcessor(FALSE, $fields,
     'AND');

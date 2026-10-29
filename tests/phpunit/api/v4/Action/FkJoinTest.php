@@ -24,6 +24,7 @@ use Civi\Api4\Activity;
 use Civi\Api4\Contact;
 use Civi\Api4\Email;
 use Civi\Api4\EntityTag;
+use Civi\Api4\LineItem;
 use Civi\Api4\Relationship;
 use Civi\Api4\Tag;
 use Civi\Test\TransactionalInterface;
@@ -33,12 +34,15 @@ use Civi\Test\TransactionalInterface;
  */
 class FkJoinTest extends Api4TestBase implements TransactionalInterface {
 
+  protected ?array $enableComponents = ['*'];
+
   public function tearDown(): void {
     $relatedTables = [
       'civicrm_activity',
       'civicrm_phone',
       'civicrm_activity_contact',
       'civicrm_relationship',
+      'civicrm_case_activity',
       'civicrm_case_contact',
       'civicrm_case_type',
       'civicrm_case',
@@ -126,7 +130,7 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
     $this->assertCount(1, $contacts);
     $this->assertEquals($contact1['id'], $contacts[0]['id']);
     $this->assertEquals('+35355439483', $contacts[0]['phone.phone']);
-    $this->assertEquals('1', $contacts[0]['phone.location_type_id']);
+    $this->assertEquals($this->getLocationTypeID('Home'), $contacts[0]['phone.location_type_id']);
   }
 
   public function testImplicitJoinOnExplicitJoin(): void {
@@ -138,7 +142,7 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
 
     $contacts = Contact::get(FALSE)
       ->addWhere('id', '=', $contact1['id'])
-      ->addJoin('Address AS address', TRUE, ['id', '=', 'address.contact_id'], ['address.location_type_id', '=', 1])
+      ->addJoin('Address AS address', TRUE, ['id', '=', 'address.contact_id'], ['address.location_type_id', '=', $this->getLocationTypeID('Home')])
       ->addSelect('id', 'address.country_id.iso_code')
       ->execute();
     $this->assertCount(1, $contacts);
@@ -152,7 +156,7 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
       'country_id' => 1228,
     ]);
     $contacts = Contact::get(FALSE)
-      ->addJoin('Address AS address', 'EXCLUDE', ['id', '=', 'address.contact_id'], ['address.location_type_id', '=', 1])
+      ->addJoin('Address AS address', 'EXCLUDE', ['id', '=', 'address.contact_id'], ['address.location_type_id', '=', $this->getLocationTypeID('Home')])
       ->addSelect('id')
       ->execute()->column('id');
     $this->assertNotContains($contact1['id'], $contacts);
@@ -234,14 +238,17 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
   public function testBridgeJoinTags(): void {
     $tag1 = Tag::create(FALSE)
       ->addValue('name', uniqid('join1'))
+      ->addValue('label', 'join1')
       ->execute()
       ->first()['name'];
     $tag2 = Tag::create(FALSE)
       ->addValue('name', uniqid('join2'))
+      ->addValue('label', 'join2')
       ->execute()
       ->first()['name'];
     $tag3 = Tag::create(FALSE)
       ->addValue('name', uniqid('join3'))
+      ->addValue('label', 'join3')
       ->execute()
       ->first()['name'];
     // Create using pseudoconstant syntax (:name)
@@ -262,6 +269,17 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
       ->addValue('first_name', 'Ccc')
       ->execute()
       ->first()['id'];
+    // fk syntax won't work with non-unique fields like "label"
+    try {
+      EntityTag::create()
+        ->addValue('entity_id', $cid3)
+        ->addValue('tag_id.label', 'join1')
+        ->execute();
+    }
+    catch (\CRM_Core_Exception $e) {
+      $message = $e->getMessage();
+    }
+    $this->assertStringContainsString('No unique index on Tag.label', $message);
 
     $required = Contact::get(FALSE)
       ->addJoin('Tag', TRUE, 'EntityTag')
@@ -315,7 +333,7 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
         ->addValue('target_contact_id', '$id')
       )
       ->addChain('r1', Relationship::create()
-        ->setValues(['contact_id_a' => '$id', 'contact_id_b' => $cid1, 'relationship_type_id' => 1])
+        ->setValues(['contact_id_a' => '$id', 'contact_id_b' => $cid1, 'relationship_type_id:name' => 'Child of'])
       )
       ->execute()
       ->first()['id'];
@@ -332,10 +350,10 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
         ->addValue('target_contact_id', '$id')
       )
       ->addChain('r1', Relationship::create()
-        ->setValues(['contact_id_a' => '$id', 'contact_id_b' => $cid1, 'relationship_type_id' => 1])
+        ->setValues(['contact_id_a' => '$id', 'contact_id_b' => $cid1, 'relationship_type_id:name' => 'Child of'])
       )
       ->addChain('r2', Relationship::create()
-        ->setValues(['contact_id_a' => '$id', 'contact_id_b' => $cid2, 'relationship_type_id' => 2, 'is_active' => FALSE])
+        ->setValues(['contact_id_a' => '$id', 'contact_id_b' => $cid2, 'relationship_type_id:name' => 'Spouse of', 'is_active' => FALSE])
       )
       ->execute()
       ->first()['id'];
@@ -467,8 +485,6 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
   }
 
   public function testJoinCaseRoles(): void {
-    \CRM_Core_BAO_ConfigSetting::enableComponent('CiviCase');
-
     $contactID = $this->createTestRecord('Contact')['id'];
     $managerID = $this->createTestRecord('Contact')['id'];
 
@@ -488,6 +504,29 @@ class FkJoinTest extends Api4TestBase implements TransactionalInterface {
     // FIXME: Currently returning 2
     // $this->assertCount(1, $contacts);
     $this->assertEquals($managerID, $contacts[0]['id']);
+  }
+
+  public function testExtraJoinSqlWithExplicitAndImplicitJoin(): void {
+    $contact = $this->createTestRecord('Contact');
+    $email = $this->createTestRecord('Email', [
+      'contact_id' => $contact['id'],
+      'email' => 'primary@example.com',
+      'is_primary' => 1,
+    ]);
+    $contribution = $this->createTestRecord('Contribution', [
+      'contact_id' => $contact['id'],
+    ]);
+    $lineItem = $this->createTestRecord('LineItem', [
+      'contribution_id' => $contribution['id'],
+    ]);
+
+    $result = LineItem::get(FALSE)
+      ->addJoin('Contribution AS con', 'INNER', ['contribution_id', '=', 'con.id'])
+      ->addSelect('con.contact_id.email_primary')
+      ->addWhere('id', '=', $lineItem['id'])
+      ->execute()->first();
+
+    $this->assertEquals($email['id'], $result['con.contact_id.email_primary']);
   }
 
 }

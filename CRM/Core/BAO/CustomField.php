@@ -207,26 +207,6 @@ class CRM_Core_BAO_CustomField extends CRM_Core_DAO_CustomField implements \Civi
   }
 
   /**
-   * Save multiple fields, now deprecated in favor of self::writeRecords.
-   * https://lab.civicrm.org/dev/core/issues/1093
-   * @deprecated
-   *
-   * @param array $bulkParams
-   *   Array of arrays as would be passed into create
-   * @param array $defaults
-   *  Default parameters to be be merged into each of the params.
-   *
-   * @throws \CRM_Core_Exception
-   */
-  public static function bulkSave($bulkParams, $defaults = []) {
-    CRM_Core_Error::deprecatedFunctionWarning(__CLASS__ . '::writeRecords');
-    foreach ($bulkParams as $index => $fieldParams) {
-      $bulkParams[$index] = array_merge($defaults, $fieldParams);
-    }
-    self::writeRecords($bulkParams);
-  }
-
-  /**
    * Create/update several fields at once in a mysql efficient way.
    *
    * @param array $records
@@ -298,21 +278,6 @@ class CRM_Core_BAO_CustomField extends CRM_Core_DAO_CustomField implements \Civi
    */
   public static function retrieve($params, &$defaults) {
     return self::commonRetrieve(self::class, $params, $defaults);
-  }
-
-  /**
-   * @deprecated - this bypasses hooks.
-   * @param int $id
-   * @param bool $is_active
-   * @return bool
-   */
-  public static function setIsActive($id, $is_active) {
-    CRM_Core_Error::deprecatedFunctionWarning('writeRecord');
-    Civi::rebuild(['system' => TRUE])->execute();
-
-    //enable-disable CustomField
-    CRM_Core_BAO_UFField::setUFField($id, $is_active);
-    return CRM_Core_DAO::setFieldValue('CRM_Core_DAO_CustomField', $id, 'is_active', $is_active);
   }
 
   /**
@@ -1035,7 +1000,7 @@ class CRM_Core_BAO_CustomField extends CRM_Core_DAO_CustomField implements \Civi
 
       case 'Link':
         $element->setAttribute('class', "url");
-        $qf->addRule($elementName, ts('Enter a valid web address beginning with \'http://\' or \'https://\'.'), 'wikiURL');
+        $qf->addRule($elementName, ts("Enter a valid web address beginning with 'http://' or 'https://'."), 'wikiURL');
         break;
     }
     if ($field->is_view && !$search) {
@@ -2356,29 +2321,11 @@ WHERE  id IN ( %1, %2 )
    * @throws \CRM_Core_Exception
    */
   public static function getTableColumnGroup($fieldID): array {
-    global $tsLocale;
-    // check if we can get the field values from the system cache
-    $cacheKey = "CRM_Core_DAO_CustomField_CustomGroup_TableColumn_{$fieldID}_$tsLocale";
-    if (Civi::cache('metadata')->has($cacheKey)) {
-      return Civi::cache('metadata')->get($cacheKey);
-    }
-
-    $query = '
-SELECT cg.table_name, cf.column_name, cg.id
-FROM   civicrm_custom_group cg,
-     civicrm_custom_field cf
-WHERE  cf.custom_group_id = cg.id
-AND    cf.id = %1';
-    $params = [1 => [$fieldID, 'Integer']];
-    $dao = CRM_Core_DAO::executeQuery($query, $params);
-
-    if (!$dao->fetch()) {
+    $field = self::getField($fieldID);
+    if (!$field) {
       throw new CRM_Core_Exception('Cannot find table and column information for Custom Field ' . $fieldID);
     }
-    $fieldValues = [$dao->table_name, $dao->column_name, $dao->id];
-    Civi::cache('metadata')->set($cacheKey, $fieldValues);
-
-    return $fieldValues;
+    return [$field['custom_group']['table_name'], $field['column_name'], $field['custom_group_id']];
   }
 
   /**

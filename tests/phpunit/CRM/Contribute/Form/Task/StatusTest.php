@@ -64,7 +64,7 @@ class CRM_Contribute_Form_Task_StatusTest extends CiviUnitTestCase {
     CRM_Contribute_Form_Task_Status::processForm($form, $params);
 
     $contribution = $this->callAPISuccess('Contribution', 'get', ['id' => $contributionId]);
-    $updatedContribution = $contribution['values'][1];
+    $updatedContribution = $contribution['values'][$contributionId];
 
     $this->assertEquals('', $updatedContribution['contribution_source']);
     $this->assertEquals(date("Y-m-d"), date("Y-m-d", strtotime($updatedContribution['receive_date'])));
@@ -112,7 +112,7 @@ class CRM_Contribute_Form_Task_StatusTest extends CiviUnitTestCase {
     CRM_Contribute_Form_Task_Status::processForm($form, $params);
 
     $contribution = $this->callAPISuccess('Contribution', 'get', ['id' => $contributionId]);
-    $updatedContribution = $contribution['values'][1];
+    $updatedContribution = $contribution['values'][$contributionId];
 
     $this->assertEquals('', $updatedContribution['contribution_source']);
     $this->assertEquals(date("Y-m-d"), date("Y-m-d", strtotime($updatedContribution['receive_date'])));
@@ -121,6 +121,33 @@ class CRM_Contribute_Form_Task_StatusTest extends CiviUnitTestCase {
 
     $mut->assertMailLogEmpty();
     $mut->stop();
+  }
+
+  /**
+   * Test that formRule allows a check_number for any payment instrument whose 'grouping'
+   * includes 'check_number', not just the reserved 'Check' instrument, and still rejects
+   * one that doesn't.
+   */
+  public function testFormRuleChecksPaymentInstrumentFields(): void {
+    $checkInstrument = $this->createTestEntity('OptionValue', [
+      'option_group_id:name' => 'payment_instrument',
+      'name' => 'International Check',
+      'label' => 'International Check',
+      'value' => 90,
+      'grouping' => json_encode(['check_number']),
+    ], 'internationalCheck');
+
+    $this->assertTrue(CRM_Contribute_Form_Task_Status::formRule([
+      'check_number_1' => '12345',
+      'payment_instrument_id_1' => $checkInstrument['value'],
+    ]));
+
+    $cashID = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Cash');
+    $errors = CRM_Contribute_Form_Task_Status::formRule([
+      'check_number_1' => '12345',
+      'payment_instrument_id_1' => $cashID,
+    ]);
+    $this->assertArrayHasKey('payment_instrument_id_1', $errors);
   }
 
 }

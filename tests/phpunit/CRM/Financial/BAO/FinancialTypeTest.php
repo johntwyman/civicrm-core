@@ -84,8 +84,8 @@ class CRM_Financial_BAO_FinancialTypeTest extends CiviUnitTestCase {
     $types = [];
     CRM_Financial_BAO_FinancialType::getAvailableFinancialTypes($types);
     $expectedResult = [
-      1 => 'Donation',
-      2 => 'Member Dues',
+      $this->getFinancialTypeID('Donation') => 'Donation',
+      $this->getFinancialTypeID('Member Dues') => 'Member Dues',
       $newFinancialType[0]['id'] => 'New FinType',
     ];
     $this->assertEquals($expectedResult, $types, 'Verify that only certain financial types can be retrieved');
@@ -93,7 +93,7 @@ class CRM_Financial_BAO_FinancialTypeTest extends CiviUnitTestCase {
     $this->setPermissions([
       'view contributions of type Donation',
     ]);
-    unset($expectedResult[2]);
+    unset($expectedResult[$this->getFinancialTypeID('Member Dues')]);
     unset($expectedResult[$newFinancialType[0]['id']]);
     CRM_Financial_BAO_FinancialType::getAvailableFinancialTypes($types);
     $this->assertEquals($expectedResult, $types, 'Verify that removing permission for a financial type restricts the available financial types');
@@ -114,15 +114,15 @@ class CRM_Financial_BAO_FinancialTypeTest extends CiviUnitTestCase {
       'member_of_contact_id' => $this->organizationCreate(),
       'period_type' => 'fixed',
       'duration_interval' => 1,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'visibility' => 'Public',
       'is_active' => 1,
     ];
-    MembershipType::create()->setValues($params)->execute();
+    $typeOneID = MembershipType::create()->setValues($params)->execute()->first()['id'];
     // Add another
     $params['name'] = 'Type Two';
-    $params['financial_type_id'] = 2;
-    MembershipType::create()->setValues($params)->execute();
+    $params['financial_type_id'] = $this->getFinancialTypeID('Member Dues');
+    $typeTwoID = MembershipType::create()->setValues($params)->execute()->first()['id'];
 
     $this->setACL();
 
@@ -132,14 +132,14 @@ class CRM_Financial_BAO_FinancialTypeTest extends CiviUnitTestCase {
     ]);
     CRM_Financial_BAO_FinancialType::getAvailableMembershipTypes($types);
     $expectedResult = [
-      1 => 'Type One',
-      2 => 'Type Two',
+      $typeOneID => 'Type One',
+      $typeTwoID => 'Type Two',
     ];
     $this->assertEquals($expectedResult, $types, 'Verify that only certain membership types can be retrieved');
     $this->setPermissions([
       'view contributions of type Donation',
     ]);
-    unset($expectedResult[2]);
+    unset($expectedResult[$typeTwoID]);
     CRM_Financial_BAO_FinancialType::getAvailableMembershipTypes($types);
     $this->assertEquals($expectedResult, $types, 'Verify that removing permission for a financial type restricts the available membership types');
   }

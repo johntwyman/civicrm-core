@@ -392,6 +392,21 @@
         return valid;
       }
 
+      // Give a more specific error than "check all answers are valid" for common,
+      // easily-identifiable failures (e.g. a minlength on a text field).
+      function getInvalidInputMessage(input) {
+        if (input.classList.contains('ng-invalid-required')) {
+          return ts('Please fill all required fields.');
+        }
+        if (input.classList.contains('ng-invalid-minlength') && input.minLength > 0) {
+          const label = input.id && document.querySelector('label[for="' + input.id + '"]');
+          return label ?
+            ts('%1 must be at least %2 characters.', {1: label.textContent.trim(), 2: input.minLength}) :
+            ts('One or more fields must have at least %1 characters.', {1: input.minLength});
+        }
+        return ts('Please check all answers are valid.');
+      }
+
       function disableForm(errorMsg) {
         $('af-form[ng-form="' + ctrl.getFormMeta().name + '"]')
           .addClass('disabled')
@@ -429,8 +444,7 @@
         if (!ctrl.ngForm.$valid || !validateFileFields()) {
           // check whether its missing required or just invalid
           const firstInvalidInput = $element[0].closest('af-form').querySelector('.ng-invalid');
-          const isRequired = firstInvalidInput.classList.contains('ng-invalid-required');
-          const message = isRequired ? ts('Please fill all required fields.') : ts('Please check all answers are valid.');
+          const message = getInvalidInputMessage(firstInvalidInput);
 
           // at this point we want the user to know to check the invalid fields
           //
@@ -611,21 +625,39 @@
 
       this.getTokenValues = (tokens) => {
         const values = {};
-
-        tokens.forEach((token) => {
-          const parts = token.slice(1, -1).split('.');
-          const entity = parts[0];
-          const index = parts[1];
-          const fieldName = parts.slice(2).join('.');
-          if (!data || !data[entity] || !data[entity][index] || !data[entity][index].fields || (data[entity][index].fields[fieldName] === undefined) ) {
-            values[token] = '';
-          }
-          else {
-            values[token] = data[entity][index].fields[fieldName];
-          }
-        });
-
+        tokens.forEach((token) => values[token] = this.getTokenValue(token));
         return values;
+      };
+
+      this.getTokenValue = (token) => {
+        const parts = token.slice(1, -1).split('.');
+        const entity = parts[0];
+        const index = parts[1];
+        if (!data || !data[entity] || !data[entity][index]) {
+          return '';
+        }
+        // remember: custom field fieldnames contain `.`
+        const fieldName = parts.slice(2).join('.');
+
+        if (data[entity][index].fields && (data[entity][index].fields[fieldName] !== undefined) ) {
+          return data[entity][index].fields[fieldName];
+        }
+
+        const joinParts = fieldName.split('.');
+        const joinEntity = joinParts[0];
+        const joinIndex = joinParts[1];
+        const joinFieldName = joinParts.slice(2).join('.');
+
+        if (
+          data[entity][index].joins &&
+          data[entity][index].joins[joinEntity] &&
+          data[entity][index].joins[joinEntity][joinIndex] &&
+          (data[entity][index].joins[joinEntity][joinIndex][joinFieldName] !== undefined)
+        ) {
+          return data[entity][index].joins[joinEntity][joinIndex][joinFieldName];
+        }
+
+        return '';
       };
 
       this.replaceTokens = (message) => {

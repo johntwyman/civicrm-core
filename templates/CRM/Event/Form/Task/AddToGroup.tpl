@@ -29,7 +29,7 @@
                 <tr class="crm-contact-task-addtogroup-form-block-title">
                    <td class="label">{$form.title.label}<span class="crm-marker">*</span></td>
                    <td>{$form.title.html}</td>
-                <tr>
+                </tr>
                 <tr class="crm-contact-task-addtogroup-form-block-description">
                    <td class="label">{$form.description.label}</td>
                    <td>{$form.description.html}</td></tr>
@@ -40,7 +40,7 @@
                 </tr>
                 {/if}
                 <tr>
-                  <td colspan=2>{include file="CRM/Custom/Form/CustomData.tpl"}</td>
+                  <td colspan=2>{include file="CRM/common/customDataBlock.tpl" groupID='' customDataType='Group' customDataSubType=false cid=false}</td>
                 </tr>
                 </table>
             </td>
@@ -52,7 +52,6 @@
 </table>
 <div class="crm-submit-buttons">{include file="CRM/common/formButtons.tpl" location="bottom"}</div>
 </div>
-{include file="CRM/common/showHide.tpl"}
 
 {if !$group.id}
 {literal}

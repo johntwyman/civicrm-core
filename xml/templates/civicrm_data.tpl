@@ -30,6 +30,17 @@ INSERT INTO civicrm_component (name, namespace) VALUES ('CiviCampaign'  , 'CRM_C
 -- go ahead and insert it, then delete. This is because too much legacy code has hard-coded
 -- references to component ID, so it's better to keep the auto-increment values stable.
 DELETE FROM civicrm_component WHERE name = 'CiviGrant';
+SELECT @componentCiviEvent := id FROM civicrm_component WHERE name = 'CiviEvent';
+SELECT @componentCiviContribute := id FROM civicrm_component WHERE name = 'CiviContribute';
+SELECT @componentCiviMember := id FROM civicrm_component WHERE name = 'CiviMember';
+SELECT @componentCiviMail := id FROM civicrm_component WHERE name = 'CiviMail';
+SELECT @componentCiviPledge := id FROM civicrm_component WHERE name = 'CiviPledge';
+SELECT @componentCiviCase := id FROM civicrm_component WHERE name = 'CiviCase';
+SELECT @componentCiviCampaign := id FROM civicrm_component WHERE name = 'CiviCampaign';
+
+{crmSqlData file="sql/civicrm_data/civicrm_location_type.sqldata.php"}
+SELECT @locationTypeHome := id FROM civicrm_location_type WHERE name = 'Home';
+SELECT @locationTypeMain := id FROM civicrm_location_type WHERE name = 'Main';
 
 -- Create organization contact
 INSERT INTO civicrm_contact( `contact_type`, `sort_name`, `display_name`, `legal_name`, `organization_name`)
@@ -38,12 +49,11 @@ SET @contactID := LAST_INSERT_ID();
 
 INSERT INTO civicrm_email (contact_id, location_type_id, email, is_primary, is_billing, on_hold, hold_date, reset_date)
 VALUES
-(@contactID, 1, 'fixme.domainemail@example.org', 1, 0, 0, NULL, NULL);
+(@contactID, @locationTypeHome, 'fixme.domainemail@example.org', 1, 0, 0, NULL, NULL);
 
 INSERT INTO civicrm_domain (name, version, contact_id) VALUES (@domainName, '2.2', @contactID);
 SELECT @domainID := id FROM civicrm_domain where name = 'Default Domain Name';
 
-{crmSqlData file="sql/civicrm_data/civicrm_location_type.sqldata.php"}
 {crmSqlData file="sql/civicrm_data/civicrm_relationship_type.sqldata.php"}
 {crmSqlData file="sql/civicrm_data/civicrm_tag.sqldata.php"}
 {crmSqlData file="sql/civicrm_data/civicrm_mailing_component.sqldata.php"}
@@ -168,8 +178,8 @@ VALUES
 -- CRM-9714
 
 INSERT INTO `civicrm_price_set` ( `name`, `title`, `is_active`, `extends`, `is_quick_config`, `financial_type_id`, `is_reserved` )
-VALUES ( 'default_contribution_amount', 'Contribution Amount', '1', '2', '1', NULL, 1),
-( 'default_membership_type_amount', 'Membership Amount', '1', '3', '1', @financial_type_id_md, 1);
+VALUES ( 'default_contribution_amount', 'Contribution Amount', '1', CONCAT('', @componentCiviContribute, ''), '1', NULL, 1),
+( 'default_membership_type_amount', 'Membership Amount', '1', CONCAT('', @componentCiviMember, ''), '1', @financial_type_id_md, 1);
 
 SELECT @setID := max(id) FROM civicrm_price_set WHERE name = 'default_contribution_amount' AND is_quick_config = 1;
 
@@ -179,7 +189,7 @@ VALUES ( @setID, 'contribution_amount', 'Contribution Amount', 'Text', '1', '1',
 SELECT @fieldID := max(id) FROM civicrm_price_field WHERE name = 'contribution_amount' AND price_set_id = @setID;
 
 INSERT INTO `civicrm_price_field_value` (  `price_field_id`, `name`, `label`, `amount`, `weight`, `is_default`, `is_active`, `financial_type_id`)
-VALUES ( @fieldID, 'contribution_amount', 'Contribution Amount', '1', '1', '0', '1', 1);
+VALUES ( @fieldID, 'contribution_amount', 'Contribution Amount', '1', '1', '0', '1', @financial_type_id_dtn);
 
 {crmSqlData file="sql/civicrm_data/civicrm_extension.sqldata.php"}
 {crmSqlData file="sql/civicrm_data/civicrm_option_group/soft_credit_type.sqldata.php"}

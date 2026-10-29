@@ -15,13 +15,14 @@ namespace Civi\Api4\Utils;
 use Civi\API\Exception\UnauthorizedException;
 use Civi\API\Request;
 use Civi\Api4\Generic\AbstractAction;
+use Civi\Api4\Generic\Result;
 use Civi\Api4\Service\Schema\SchemaMap;
 use CRM_Core_DAO_AllCoreTables as AllCoreTables;
 
 class CoreUtil {
 
   public static function entityExists(string $entityName): bool {
-    return (bool) self::getInfoItem($entityName, 'name');
+    return isset(\Civi::service('action_object_provider')->getEntities()[$entityName]);
   }
 
   /**
@@ -490,6 +491,7 @@ class CoreUtil {
               'params' => $className::getParams(),
               'category' => $className::getCategory(),
               'dataType' => $className::getDataType(),
+              'preservesEntityReference' => (new \ReflectionClass($className))->getDefaultProperties()['preservesEntityReference'],
               'options' => CoreUtil::formatOptionList($className::getOptions(), ['id', 'name', 'label']),
             ];
           }
@@ -534,6 +536,23 @@ class CoreUtil {
   public static function stripNamespace(string $className): string {
     $slashPos = strrpos($className, '\\');
     return $slashPos === FALSE ? $className : substr($className, $slashPos + 1);
+  }
+
+  public static function getAllowedEntityActions(string $entityName): array {
+    $uid = (int) \CRM_Core_Session::getLoggedInContactID();
+    if (!isset(\Civi::$statics[__METHOD__][$entityName][$uid])) {
+      if (!self::entityExists($entityName)) {
+        \Civi::$statics[__METHOD__][$entityName][$uid] = [];
+      }
+      else {
+        $permissions = new Result();
+        // Bypass the api wrapper, we don't want lack of permission for 'getActions' action to get in the way
+        Request::create($entityName, 'getActions', ['version' => 4, 'checkPermissions' => TRUE])
+          ->_run($permissions);
+        \Civi::$statics[__METHOD__][$entityName][$uid] = $permissions->column('name');
+      }
+    }
+    return \Civi::$statics[__METHOD__][$entityName][$uid];
   }
 
 }

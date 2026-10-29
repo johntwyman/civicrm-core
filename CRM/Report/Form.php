@@ -2967,7 +2967,7 @@ class CRM_Report_Form extends CRM_Core_Form {
       = CRM_Utils_Request::retrieve(
         'sendmail',
         'Boolean',
-        CRM_Core_DAO::$_nullObject
+        NULL
       );
 
     if ($this->_sendmail && !$this->_outputMode) {
@@ -3032,9 +3032,16 @@ class CRM_Report_Form extends CRM_Core_Form {
     // in dashboard mode for report
     //@todo - this could be done in the dashboard no we have a setter
     if (empty($this->_params['fields']) && !$this->_noFields
-      && empty($this->_params['task'])
+      && !empty($this->_formValues)
     ) {
+      $existingParams = $this->_params;
       $this->setParams($this->_formValues);
+      if (array_key_exists('task', $existingParams)) {
+        $this->_params['task'] = $existingParams['task'];
+      }
+      if (array_key_exists('output', $existingParams)) {
+        $this->_params['output'] = $existingParams['output'];
+      }
     }
 
     $this->processReportMode();
@@ -3739,7 +3746,7 @@ class CRM_Report_Form extends CRM_Core_Form {
       $params = [
         'total' => $this->_rowsFound,
         'rowCount' => $rowCount,
-        'status' => ts('Records') . ' %%StatusMessage%%',
+        'status' => ts('Records %1', [1 => '%%StatusMessage%%']),
         'buttonBottom' => 'PagerBottomButton',
         'buttonTop' => 'PagerTopButton',
       ];
@@ -3978,8 +3985,9 @@ class CRM_Report_Form extends CRM_Core_Form {
         $tableAlias = $this->_columns[$tableName]['alias'];
         $clauses = array_filter($baoName::getSelectWhereClause($tableAlias));
         foreach ($clauses as $field => $clause) {
-          // Skip contact_id field if redundant
-          if ($field != 'contact_id' || !in_array('civicrm_contact', $this->selectedTables())) {
+          // Skip contact_id field or contact-linked entity id clauses if redundant
+          $isContactEntity = $field === 'contact_id' || in_array($baoName, ['CRM_Core_BAO_Address', 'CRM_Core_BAO_Email', 'CRM_Core_BAO_Phone', 'CRM_Core_BAO_IM'], TRUE);
+          if (!$isContactEntity || !in_array('civicrm_contact', $this->selectedTables())) {
             $ret["$tableName.$field"] = $clause;
           }
         }
@@ -4821,6 +4829,26 @@ LEFT JOIN civicrm_contact {$field['alias']} ON {$field['alias']}.id = {$this->_a
   }
 
   /**
+   * Get a derived table linking memberships to the contributions that paid for them.
+   *
+   * Each (membership_id, contribution_id) pair appears once: a contribution can
+   * hold several line items for the same membership, so joining line items
+   * directly would count that contribution more than once.
+   *
+   * @return string
+   *   A parenthesised subquery with columns membership_id and contribution_id.
+   */
+  protected function getMembershipContributionTableSql(): string {
+    $lineItems = "FROM civicrm_line_item WHERE entity_table = 'civicrm_membership' AND contribution_id IS NOT NULL";
+    if (CRM_Price_BAO_LineItem::siteHasMembershipPaymentRecordsNotReflectedInLineItems()) {
+      // UNION also removes the duplicates within each half.
+      return "(SELECT entity_id AS membership_id, contribution_id $lineItems
+        UNION SELECT membership_id, contribution_id FROM civicrm_membership_payment)";
+    }
+    return "(SELECT DISTINCT entity_id AS membership_id, contribution_id $lineItems)";
+  }
+
+  /**
    * Add Financial Transaction into From Table if required.
    */
   public function addFinancialTrxnFromClause() {
@@ -4976,6 +5004,10 @@ LEFT JOIN civicrm_contact {$field['alias']} ON {$field['alias']}.id = {$this->_a
       ],
       'birth_date' => [
         'title' => ts('Birth Date'),
+        'operatorType' => CRM_Report_Form::OP_DATE,
+      ],
+      'deceased_date' => [
+        'title' => ts('Deceased Date'),
         'operatorType' => CRM_Report_Form::OP_DATE,
       ],
       'contact_type' => [
@@ -5141,7 +5173,7 @@ LEFT JOIN civicrm_contact {$field['alias']} ON {$field['alias']}.id = {$this->_a
     $this->_outputMode = str_replace('report_instance.', '', (CRM_Utils_Request::retrieve(
       'output',
       'String',
-      CRM_Core_DAO::$_nullObject,
+      NULL,
       FALSE,
       $this->_params['task'] ?? NULL
     ) ?? ''));

@@ -52,6 +52,7 @@ class CRM_Financial_Form_PaymentFormsTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testEventPaymentForms(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $this->callApiV3Success('Extension', 'install', ['keys' => ['eventcart']]);
     $this->createAuthorizeNetProcessor();
     $processors = [$this->ids['PaymentProcessor']['anet']];
@@ -86,11 +87,11 @@ class CRM_Financial_Form_PaymentFormsTest extends CiviUnitTestCase {
       'billing_first_name' => 'John',
       'billing_middle_name' => '',
       'billing_last_name' => "O'Connor",
-      'billing_street_address-5' => '8 Hobbitton Road',
-      'billing_city-5' => 'The Shire',
-      'billing_state_province_id-5' => 1012,
-      'billing_postal_code-5' => 5010,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '8 Hobbitton Road',
+      "billing_city-$billingLocationTypeID" => 'The Shire',
+      "billing_state_province_id-$billingLocationTypeID" => 1012,
+      "billing_postal_code-$billingLocationTypeID" => 5010,
+      "billing_country_id-$billingLocationTypeID" => 1228,
     ];
 
     $cart = CRM_Event_Cart_BAO_Cart::find_or_create_for_current_session();
@@ -103,6 +104,11 @@ class CRM_Financial_Form_PaymentFormsTest extends CiviUnitTestCase {
         $formValues = array_merge($genericParams, $values['submitValues'], ['qfKey' => $qfKey]);
         $form = $this->getFormObject($formName, $formValues);
         $form->preProcess();
+        if ($formName === 'CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices') {
+          // The cart creates its participant in preProcess, so the submitted values can only be keyed by its id now.
+          $participantID = Participant::get(FALSE)->addWhere('event_id', '=', $eventID)->execute()->single()['id'];
+          $form->_submitValues['event'][$eventID]['participant'] = [$participantID => $form->_submitValues['event'][$eventID]['participant'][1]];
+        }
         $form->buildQuickForm();
         $form->postProcess();
         $qfKey = $form->controller->_key;

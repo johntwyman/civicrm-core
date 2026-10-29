@@ -11,7 +11,7 @@ class CRM_Core_Payment_AuthorizeNetIPNTest extends CiviUnitTestCase {
   use CRMTraits_Financial_OrderTrait;
   use CRM_Core_Payment_AuthorizeNetTrait;
 
-  protected $_financialTypeID = 1;
+  protected $_financialTypeID;
   protected $_contactID;
   protected $_contributionRecurID;
   protected $_contributionPageID;
@@ -22,6 +22,7 @@ class CRM_Core_Payment_AuthorizeNetIPNTest extends CiviUnitTestCase {
    */
   public function setUp(): void {
     parent::setUp();
+    $this->_financialTypeID = $this->getFinancialTypeID('Donation');
     $this->_paymentProcessorID = $this->paymentProcessorAuthorizeNetCreate(['is_test' => 0], 'test');
     $this->_contactID = $this->individualCreate();
     $contributionPage = $this->callAPISuccess('ContributionPage', 'create', [
@@ -51,6 +52,7 @@ class CRM_Core_Payment_AuthorizeNetIPNTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testIPNPaymentRecurNoReceipt(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $this->isRecur = TRUE;
     $this->setupMockHandler($this->ids['PaymentProcessor']['test']);
     $mut = new CiviMailUtils($this, TRUE);
@@ -71,7 +73,7 @@ class CRM_Core_Payment_AuthorizeNetIPNTest extends CiviUnitTestCase {
     // has is_email_receipt set to 0.
     $this->getTestForm('CRM_Contribute_Form_Contribution', [
       'total_amount' => 200,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'receive_date' => date('m/d/Y'),
       'receive_date_time' => date('H:i:s'),
       'contact_id' => $this->ids['Contact']['individual_0'],
@@ -86,11 +88,11 @@ class CRM_Core_Payment_AuthorizeNetIPNTest extends CiviUnitTestCase {
       'billing_first_name' => 'Junko',
       'billing_middle_name' => '',
       'billing_last_name' => 'Adams',
-      'billing_street_address-5' => time() . ' Lincoln St S',
-      'billing_city-5' => 'Mary-knoll',
-      'billing_state_province_id-5' => 1031,
-      'billing_postal_code-5' => 10545,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => time() . ' Lincoln St S',
+      "billing_city-$billingLocationTypeID" => 'Mary-knoll',
+      "billing_state_province_id-$billingLocationTypeID" => 1031,
+      "billing_postal_code-$billingLocationTypeID" => 10545,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'frequency_interval' => 1,
       'frequency_unit' => 'month',
       'installments' => 2,

@@ -115,23 +115,10 @@ class CRM_Contact_Selector_Custom extends CRM_Contact_Selector {
     $this->_formValues = $formValues;
 
     $ext = CRM_Extension_System::singleton()->getMapper();
-
-    if (!$ext->isExtensionKey($customSearchClass)) {
-      if ($ext->isExtensionClass($customSearchClass)) {
-        $customSearchFile = $ext->classToPath($customSearchClass);
-        require_once $customSearchFile;
-      }
-      else {
-        require_once str_replace('_', DIRECTORY_SEPARATOR, $customSearchClass) . '.php';
-      }
-      $this->_search = new $customSearchClass($formValues);
+    if ($ext->isExtensionKey($customSearchClass)) {
+      $customSearchClass = $ext->keyToClass($customSearchClass, 'search');
     }
-    else {
-      $fnName = $ext->keyToPath;
-      $customSearchFile = $fnName($customSearchClass, 'search');
-      $className = $ext->keyToClass($customSearchClass, 'search');
-      $this->_search = new $className($formValues);
-    }
+    $this->_search = new $customSearchClass($formValues);
   }
 
   /**
@@ -401,7 +388,7 @@ class CRM_Contact_Selector_Custom extends CRM_Contact_Selector {
       $session->set('previousSortID', $currentSortID);
     }
 
-    $pageSize = CRM_Utils_Request::retrieve('crmRowCount', 'Integer', CRM_Core_DAO::$_nullObject, FALSE, 50);
+    $pageSize = CRM_Utils_Request::retrieve('crmRowCount', 'Integer', NULL, FALSE, 50);
     $firstRecord = ($pageNum - 1) * $pageSize;
 
     //for alphabetic pagination selection save

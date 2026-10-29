@@ -234,7 +234,7 @@ class CRM_Utils_Check_Component_Security extends CRM_Utils_Check_Component {
     if (!$found) {
       $messages[] = new CRM_Utils_Check_Message(
         __FUNCTION__,
-        ts('The system requires a cryptographic signing key. Please configure <a %1>CIVICRM_SIGN_KEYS</a>. ',
+        ts('The system requires a cryptographic signing key. Please configure <a %1>CIVICRM_SIGN_KEYS</a>.',
           [1 => 'href="https://docs.civicrm.org/sysadmin/en/latest/setup/secret-keys/" target="_blank"']
         ),
         ts('Signing Key Required'),
@@ -285,7 +285,7 @@ class CRM_Utils_Check_Component_Security extends CRM_Utils_Check_Component {
       if (file_exists($file[0])) {
         $messages[] = new CRM_Utils_Check_Message(
           __FUNCTION__,
-          ts('File \'%1\' presents a security risk and should be deleted.', [1 => $file[0]]),
+          ts("File '%1' presents a security risk and should be deleted.", [1 => $file[0]]),
           ts('Unsafe Files'),
           $file[1],
           'fa-lock'

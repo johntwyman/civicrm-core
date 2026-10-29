@@ -151,6 +151,49 @@ class CRM_Core_BAO_SettingTest extends CiviUnitTestCase {
   }
 
   /**
+   * Ensure that post_change compares the values in effect, including defaults.
+   */
+  public function testPostChangeWithDefault(): void {
+    global $_testOnChange_hookCalls;
+    $this->setMockSettingsMetaData([
+      'postChangeExample' => [
+        'group_name' => 'CiviCRM Preferences',
+        'group' => 'core',
+        'name' => 'postChangeExample',
+        'type' => 'Boolean',
+        'default' => TRUE,
+        'title' => 'Post Change Example',
+        'is_domain' => 1,
+        'is_contact' => 0,
+        'post_change' => [
+          [__CLASS__, '_testOnChange_onChangeExample'],
+        ],
+      ],
+    ]);
+
+    // never saved, leaves the default
+    $_testOnChange_hookCalls = ['count' => 0];
+    Civi::settings()->set('postChangeExample', FALSE);
+    $this->assertEquals(1, $_testOnChange_hookCalls['count']);
+    $this->assertTrue($_testOnChange_hookCalls['oldValue']);
+    $this->assertFalse($_testOnChange_hookCalls['newValue']);
+
+    // revert, returns to the default
+    $_testOnChange_hookCalls = ['count' => 0];
+    Civi::settings()->revert('postChangeExample');
+    $this->assertEquals(1, $_testOnChange_hookCalls['count']);
+    $this->assertFalse($_testOnChange_hookCalls['oldValue']);
+    $this->assertTrue($_testOnChange_hookCalls['newValue']);
+
+    // saving the default over a missing value, so listeners can sync to it
+    $_testOnChange_hookCalls = ['count' => 0];
+    Civi::settings()->set('postChangeExample', TRUE);
+    $this->assertEquals(1, $_testOnChange_hookCalls['count']);
+    $this->assertTrue($_testOnChange_hookCalls['oldValue']);
+    $this->assertTrue($_testOnChange_hookCalls['newValue']);
+  }
+
+  /**
    * Mock callback for a setting's on_change handler
    *
    * @param $oldValue
@@ -184,9 +227,9 @@ class CRM_Core_BAO_SettingTest extends CiviUnitTestCase {
    * Test that options defined as a pseudoconstant can be converted to options.
    */
   public function testPseudoConstants(): void {
-    $this->contributionPageCreate();
+    $contributionPageID = $this->contributionPageCreate()['id'];
     $metadata = \Civi\Core\SettingsMetadata::getMetadata(['name' => ['default_invoice_page']], NULL, TRUE);
-    $this->assertEquals('Test Contribution Page', $metadata['default_invoice_page']['options'][1]);
+    $this->assertEquals('Test Contribution Page', $metadata['default_invoice_page']['options'][$contributionPageID]);
   }
 
 }

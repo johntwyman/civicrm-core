@@ -3,6 +3,7 @@ namespace Civi\ext\afform\mock\tests\phpunit\api\v4\Afform;
 
 use api\v4\Afform\AfformUsageTestCase;
 use Civi\Api4\Afform;
+use Civi\Api4\Email;
 
 /**
  * Test case for Afform with autocomplete.
@@ -14,16 +15,16 @@ class AfformSubmitUsageTest extends AfformUsageTestCase {
   public function testSubmitWithDisplayOnlyFields(): void {
 
     $layout = <<<EOHTML
-<af-form ctrl="afform">
-  <af-entity data="{contact_type: 'Individual'}" type="Contact" name="Individual1" label="Individual 1" actions="{create: true, update: true}" url-autofill="1" security="RBAC"  />
-  <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
-    <af-field name="first_name" defn="{input_type: 'DisplayOnly', required: true}" />
-    <af-field name="last_name" />
-  </fieldset>
-  <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
-  <af-field defn="{input_type: 'Text', name: 'test_field'}" />
-</af-form>
-EOHTML;
+      <af-form ctrl="afform">
+        <af-entity data="{contact_type: 'Individual'}" type="Contact" name="Individual1" label="Individual 1" actions="{create: true, update: true}" url-autofill="1" security="RBAC"  />
+        <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
+          <af-field name="first_name" defn="{input_type: 'DisplayOnly', required: true}" />
+          <af-field name="last_name" />
+        </fieldset>
+        <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
+        <af-field defn="{input_type: 'Text', name: 'test_field'}" />
+      </af-form>
+    EOHTML;
 
     $this->useValues([
       'layout' => $layout,
@@ -60,35 +61,80 @@ EOHTML;
 
   public function testSubmitWithTokensInConfirmationMessage(): void {
     $layout = <<<EOHTML
-<af-form ctrl="afform">
-  <af-entity data="{source: 'Hello'}" type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="RBAC"  />
-  <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
-    <af-field name="first_name" />
-    <af-field name="last_name" />
-  </fieldset>
-  <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
-</af-form>
-EOHTML;
+      <af-form ctrl="afform">
+        <af-entity data="{source: 'Hello'}" type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="RBAC"  />
+        <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
+          <af-field name="first_name" />
+          <af-field name="last_name" />
+          <div af-join="Email" actions="{update: true, delete: true}" data="{location_type_id: 1}">
+            <div class="af-container af-layout-inline">
+              <af-field name="email" />
+            </div>
+          </div>
+          <div af-join="Email" actions="{update: true, delete: true}" data="{location_type_id: 2}">
+            <div class="af-container af-layout-inline">
+              <af-field name="email" />
+            </div>
+          </div>
+        </fieldset>
+        <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
+      </af-form>
+    EOHTML;
 
     $this->useValues([
       'layout' => $layout,
       'permission' => \CRM_Core_Permission::ALWAYS_ALLOW_PERMISSION,
       'confirmation_type' => 'show_confirmation_message',
-      'confirmation_message' => 'Thank you "[Individual1.0.first_name] [Individual1.0.last_name]" You are now registered as [Individual1.0.source] ID_[Individual1.0.id].',
+      'confirmation_message' => '
+        <p>Thank you "[Individual1.0.first_name] [Individual1.0.last_name]".</p>
+        <p>You are now registered as [Individual1.0.source] ID_[Individual1.0.id].</p>
+        <p>Your home email is [Individual1.0.Email.0.email] (ID [Individual1.0.Email.0.id]).</p>
+        <p>Your work email is [Individual1.0.Email.1.email] (ID [Individual1.0.Email.1.id]).</p>
+      ',
     ]);
 
     // Submit with new contact
     $submission = [
-      ['fields' => ['first_name' => 'Jane', 'last_name' => 'Doe']],
+      'Individual1' => [
+        0 => [
+          'fields' => [
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
+          ],
+          'joins' => [
+            'Email' => [
+              0 => [
+                'email' => 'jane@home.com',
+              ],
+              1 => [
+                'email' => 'jane@work.com',
+              ],
+            ],
+          ],
+        ],
+      ],
     ];
+
     $result = Afform::submit()
       ->setName($this->formName)
-      ->setValues(['Individual1' => $submission])
+      ->setValues($submission)
       ->execute();
 
     $contactId = $result[0]['Individual1'][0]['id'];
-    $expectedMessage = "Thank you \"Jane Doe\" You are now registered as Hello ID_$contactId.";
-    $this->assertSame($expectedMessage, $result[0]['message']);
+    $emails = \Civi\Api4\Email::get(FALSE)
+      ->addWhere('contact_id', '=', $contactId)
+      ->execute()
+      ->indexBy('location_type_id');
+
+    $expectedLines = [
+      "<p>Thank you \"Jane Doe\".</p>",
+      "<p>You are now registered as Hello ID_{$contactId}.</p>",
+      "<p>Your home email is jane@home.com (ID {$emails[1]['id']}).</p>",
+      "<p>Your work email is jane@work.com (ID {$emails[2]['id']}).</p>",
+    ];
+    foreach ($expectedLines as $line) {
+      $this->assertStringContainsString($line, $result[0]['message']);
+    }
   }
 
   public function testSubmitWithRecaptcha(): void {
@@ -96,16 +142,16 @@ EOHTML;
     \Civi::settings()->set('recaptchaPublicKey', 'test_public_key');
 
     $layout = <<<EOHTML
-<af-form ctrl="afform">
-  <af-entity data="{source: 'Hello'}" type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="RBAC"  />
-  <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
-    <af-field name="first_name" />
-    <af-field name="last_name" />
-  </fieldset>
-  <crm-recaptcha2 />
-  <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
-</af-form>
-EOHTML;
+      <af-form ctrl="afform">
+        <af-entity data="{source: 'Hello'}" type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="RBAC"  />
+        <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
+          <af-field name="first_name" />
+          <af-field name="last_name" />
+        </fieldset>
+        <crm-recaptcha2 />
+        <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
+      </af-form>
+    EOHTML;
 
     $this->useValues([
       'layout' => $layout,
@@ -195,6 +241,56 @@ EOHTML;
   }
 
   /**
+   * A Hidden field's afform_default can be a relative date filter value (e.g. "this.day"
+   * for Today); the entity's create action needs the absolute date it represents, not
+   * the filter string itself.
+   */
+  public function testSubmitConvertsRelativeDateDefaultOnHiddenField(): void {
+    $layout = <<<EOHTML
+<af-form ctrl="afform">
+  <af-entity data="{contact_type: 'Individual'}" type="Contact" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="RBAC"  />
+  <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
+    <af-field name="first_name" />
+    <af-field name="last_name" />
+    <af-field name="birth_date" defn="{input_type: 'Hidden', afform_default: 'this.day'}" />
+  </fieldset>
+  <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
+</af-form>
+EOHTML;
+
+    $this->useValues([
+      'layout' => $layout,
+      'permission' => \CRM_Core_Permission::ALWAYS_ALLOW_PERMISSION,
+    ]);
+
+    $lastName = uniqid('RelativeDate');
+    $submission = [
+      'Individual1' => [
+        ['fields' => ['first_name' => 'Jane', 'last_name' => $lastName]],
+      ],
+    ];
+    // Pin the DB session's clock so CURDATE() (what relativeToSql() resolves "this.day"
+    // against) is deterministic, rather than racing a real midnight rollover.
+    \CRM_Core_DAO::executeQuery('SET @@session.timestamp = %1', [1 => [strtotime('2020-08-01 01:00:00'), 'Integer']]);
+    try {
+      $result = Afform::submit()
+        ->setName($this->formName)
+        ->setValues($submission)
+        ->execute();
+    }
+    finally {
+      \CRM_Core_DAO::executeQuery('SET @@session.timestamp = DEFAULT');
+    }
+
+    $contactId = $result[0]['Individual1'][0]['id'];
+    $birthDate = \Civi\Api4\Contact::get(FALSE)
+      ->addWhere('id', '=', $contactId)
+      ->addSelect('birth_date')
+      ->execute()->single()['birth_date'];
+    $this->assertEquals('2020-08-01', $birthDate);
+  }
+
+  /**
    * A database error during entity save must fail the submission rather than be reported
    * as saved, while other errors stay silently ignored for optional entities left blank.
    *
@@ -254,6 +350,99 @@ EOHTML;
     finally {
       \Civi::dispatcher()->removeListener('hook_civicrm_pre', $listen);
     }
+  }
+
+  /**
+   * Ensure saveJoins() does not allow ids of join entities that do not belong
+   * to the parent entity.
+   */
+  public function testSaveJoinsDoesNotAllowForeignIds(): void {
+    $layout = <<<EOHTML
+<af-form ctrl="afform">
+  <af-entity type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="FBAC" />
+  <fieldset af-fieldset="Individual1" class="af-container" af-title="Individual 1">
+    <af-field name="first_name" />
+    <af-field name="last_name" />
+    <div af-join="Email" min="1" af-repeat="Add">
+      <afblock-contact-email></afblock-contact-email>
+    </div>
+  </fieldset>
+  <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()">Submit</button>
+</af-form>
+EOHTML;
+
+    $this->useValues([
+      'layout' => $layout,
+      'is_public' => TRUE,
+      'permission' => ['*always allow*'],
+    ]);
+
+    $contact = $this->createTestRecord('Individual', [
+      'first_name' => 'Alice',
+      'last_name' => 'Tester',
+    ]);
+
+    $email1 = $this->createTestRecord('Email', [
+      'contact_id' => $contact['id'],
+      'email' => 'alice1@example.com',
+      'location_type_id' => 1,
+      'is_primary' => TRUE,
+    ]);
+
+    $email2 = $this->createTestRecord('Email', [
+      'contact_id' => $contact['id'],
+      'email' => 'alice2@example.com',
+      'location_type_id' => 2,
+      'is_primary' => FALSE,
+    ]);
+
+    $otherContact = $this->createTestRecord('Individual', [
+      'first_name' => 'Bob',
+      'last_name' => 'Victim',
+    ]);
+
+    $otherEmail = $this->createTestRecord('Email', [
+      'contact_id' => $otherContact['id'],
+      'email' => 'bob@example.com',
+      'location_type_id' => 1,
+      'is_primary' => TRUE,
+    ]);
+
+    $submission = [
+      'Individual1' => [
+        [
+          'fields' => [
+            'id' => $contact['id'],
+            'first_name' => 'Alice',
+            'last_name' => 'Tester',
+          ],
+          'joins' => [
+            'Email' => [
+              ['email' => 'alice1@example.com', 'location_type_id' => 1],
+              ['email' => 'alice2@example.com', 'location_type_id' => 2],
+              ['id' => $otherEmail['id'], 'email' => 'hacked@example.com', 'location_type_id' => 1],
+            ],
+          ],
+        ],
+      ],
+    ];
+
+    try {
+      Afform::submit()
+        ->setName($this->formName)
+        ->setValues($submission)
+        ->execute();
+    }
+    catch (\CRM_Core_Exception $e) {
+    }
+
+    $victimEmail = Email::get(FALSE)
+      ->addWhere('id', '=', $otherEmail['id'])
+      ->execute()
+      ->first();
+
+    $this->assertEquals('bob@example.com', $victimEmail['email']);
+    $this->assertEquals($otherContact['id'], $victimEmail['contact_id']);
   }
 
 }

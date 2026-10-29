@@ -98,7 +98,6 @@ class OrderCompleteSubscriber extends AutoService implements EventSubscriberInte
         ->addWhere('contribution_id', '=', $contributionID)
         ->addWhere('entity_table', '=', 'civicrm_membership')
         ->addWhere('entity_id', '=', $membership['id'])
-        ->addWhere('contribution_id.contact_id', '=', $membershipParams['contact_id'])
         ->execute()
         ->first();
       if (!empty($membershipLineItem) && !empty($membershipLineItem['price_field_value.membership_type_id'])) {
@@ -142,7 +141,7 @@ class OrderCompleteSubscriber extends AutoService implements EventSubscriberInte
       //we might be renewing membership,
       //so make status override false.
       $membershipParams['is_override'] = FALSE;
-      $membershipParams['status_override_end_date'] = 'null';
+      $membershipParams['status_override_end_date'] = NULL;
       $membershipParams += \CRM_Member_BAO_Membership::getCalculatedDates($membershipParams);
 
       // An explicit end date (or other membership field) requested via

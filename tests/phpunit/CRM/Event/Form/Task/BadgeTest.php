@@ -31,7 +31,7 @@ class CRM_Event_Form_Task_BadgeTest extends CiviUnitTestCase {
       'fee_level' => 'low',
     ]);
 
-    $badgeLayout = PrintLabel::get()->addSelect('data')->execute()->first();
+    $badgeLayout = PrintLabel::get()->addSelect('id', 'data')->execute()->first();
     $values = [
       'data' => array_merge((array) $badgeLayout['data'], ['token' => [], 'font_name' => [''], 'font_size' => [], 'text_alignment' => [], 'add_barcode' => 1]),
     ];
@@ -43,7 +43,7 @@ class CRM_Event_Form_Task_BadgeTest extends CiviUnitTestCase {
       $values['data']['font_style'][$index] = '';
       $values['data']['text_alignment'][$index] = 'C';
     }
-    PrintLabel::update()->addWhere('id', '=', 1)->setValues($values)->execute();
+    PrintLabel::update()->addWhere('id', '=', $badgeLayout['id'])->setValues($values)->execute();
 
     $_REQUEST['context'] = 'view';
     $_REQUEST['id'] = $participantID;
@@ -51,7 +51,7 @@ class CRM_Event_Form_Task_BadgeTest extends CiviUnitTestCase {
     /** @var CRM_Event_Form_Task_Badge $form */
     $form = $this->getSearchFormObject(
       'CRM_Event_Form_Task_Badge',
-      ['badge_id' => 1],
+      ['badge_id' => $badgeLayout['id']],
       NULL,
       [
         'task' => CRM_Core_Task::BATCH_UPDATE,
@@ -92,7 +92,7 @@ class CRM_Event_Form_Task_BadgeTest extends CiviUnitTestCase {
       '{contact.display_name}' => 'Mr. Anthony Anderson II',
       '{contact.current_employer}' => 'Default Organization',
       '{event.start_date|crmDate:"%B %E%f"}' => 'October 21st',
-      '{participant.status_id}' => 2,
+      '{participant.status_id}' => $this->getParticipantStatusID('Attended'),
       '{participant.role_id}' => 1,
       '{participant.register_date}' => 'February 19th, 2007',
       '{participant.source}' => 'Wimbledon',
@@ -103,7 +103,7 @@ class CRM_Event_Form_Task_BadgeTest extends CiviUnitTestCase {
       '{participant.role_id:label}' => 'Attendee',
       '{participant.fee_label}' => NULL,
       '{event.end_date|crmDate:"%B %E%f"}' => 'October 23rd',
-      '{participant.event_id}' => 1,
+      '{participant.event_id}' => $this->getEventID(),
     ];
   }
 

@@ -14,6 +14,7 @@
  * @copyright CiviCRM LLC https://civicrm.org/licensing
  */
 use Civi\Api4\LineItem;
+use Civi\Api4\Participant;
 
 /**
  * This class generates form components for processing Event.
@@ -23,6 +24,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   use CRM_Financial_Form_FrontEndPaymentFormTrait;
   use CRM_Event_Form_EventFormTrait;
   use CRM_Financial_Form_PaymentProcessorFormTrait;
+  use CRM_Custom_Form_CustomDataTrait;
 
   /**
    * The id of the event we are processing.
@@ -56,6 +58,21 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   }
 
   /**
+   * Is there a price set to build an Order from.
+   *
+   * getOrder() requires a price set id (initializeOrder() passes
+   * getPriceSetID() to Order::setPriceSetID(), which takes a non-nullable
+   * int) - call this first wherever an event might not have one, e.g. a
+   * free event with no price set at all.
+   *
+   * @return bool
+   * @throws \CRM_Core_Exception
+   */
+  protected function hasOrder(): bool {
+    return (bool) $this->getPriceSetID();
+  }
+
+  /**
    * Get all the submitted values for all the forms in the sequence.
    *
    * @return array
@@ -63,7 +80,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   protected function getAllSubmittedValues(): array {
     $moneyFieldNames = $this->getPriceMoneyFieldNames();
     $allSubmittedValues = ['Register' => $this->getMainFormValues()];
-    foreach (array_keys($this->controller->getStateMachine()->getPages()) as $pageKey) {
+    foreach (array_keys($this->controller->getStateMachine()->getPages() ?? []) as $pageKey) {
       $pageName = str_replace('CRM_Event_Form_Registration_', '', $pageKey);
       if (str_starts_with($pageName, 'Participant_')) {
         // The 'Skip Participant' button is built with type 'next', subName
@@ -88,8 +105,24 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
           $values[$moneyFieldName] = CRM_Utils_Rule::cleanMoney($values[$moneyFieldName]);
         }
       }
+      $values = $this->cleanSubmittedCustomFieldValues($values);
     }
     return $allSubmittedValues;
+  }
+
+  /**
+   * Get the participant numbers actually present in this submission
+   * (0 = primary, 1+ = additional) - when 'Skip Participant' button
+   * is used they are excluded.
+   *
+   * @return int[]
+   */
+  protected function getSubmittedParticipantNumbers(): array {
+    $participantNumbers = [];
+    foreach (array_keys($this->getAllSubmittedValues()) as $pageName) {
+      $participantNumbers[] = $pageName === 'Register' ? 0 : (int) substr($pageName, strlen('Participant_'));
+    }
+    return $participantNumbers;
   }
 
   /**
@@ -136,6 +169,9 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
    * @throws \CRM_Core_Exception
    */
   protected function getPriceMoneyFieldNames(): array {
+    if (!$this->getPriceSetID()) {
+      return [];
+    }
     $fieldNames = [];
     foreach ($this->getPriceFieldMetaData() as $priceField) {
       if ($priceField['html_type'] === 'Text') {
@@ -201,7 +237,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     if (!empty($this->_priceSet['fields'])) {
       return $this->_priceSet['fields'];
     }
-    return $this->order->getPriceFieldsMetadata();
+    return $this->getOrder()->getPriceFieldsMetadata();
   }
 
   /**
@@ -384,7 +420,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     $this->assign('moneyFormat', CRM_Utils_Money::format(1234.56, $this->getCurrency()));
 
     //check if participant allow to walk registration wizard.
-    $this->_allowConfirmation = $this->get('allowConfirmation');
+    $this->_allowConfirmation = $this->_participantId && $this->getParticipantValue('status_id.class') === 'Pending';
     $this->assign('currency', $this->getCurrency());
     // check for Approval
     $this->_requireApproval = $this->get('requireApproval');
@@ -420,11 +456,6 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
       CRM_Event_BAO_Event::retrieve($params, $this->_values['event']);
 
       $this->checkValidEvent();
-      // get the participant values, CRM-4320
-      $this->_allowConfirmation = FALSE;
-      if ($this->_participantId) {
-        $this->processFirstParticipant($this->_participantId);
-      }
       //check for additional participants.
       if ($this->_allowConfirmation && $this->_values['event']['is_multiple_registrations']) {
         $additionalParticipantIds = CRM_Event_BAO_Participant::getAdditionalParticipantIds($this->_participantId);
@@ -561,12 +592,6 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     $isShowLocation = $this->_values['event']['is_show_location'] ?? NULL;
     $this->assign('isShowLocation', $isShowLocation);
     CRM_Contribute_BAO_Contribution_Utils::overrideDefaultCurrency($this->_values['event']);
-
-    //lets allow user to override campaign.
-    $campID = CRM_Utils_Request::retrieve('campID', 'Positive', $this);
-    if ($campID && CRM_Core_DAO::getFieldValue('CRM_Campaign_DAO_Campaign', $campID)) {
-      $this->_values['event']['campaign_id'] = $campID;
-    }
 
     // Set the same value for is_billing_required as contribution page so code can be shared.
     $this->_values['is_billing_required'] = $this->_values['event']['is_billing_required'] ?? NULL;
@@ -811,16 +836,280 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   }
 
   /**
+   * Get the contact id for the registration.
+   *
+   * @param array $fields
+   * @param bool $isAdditional
+   *
+   * @return int|null
+   * @throws \CRM_Core_Exception
+   */
+  protected function getRegistrationContactID($fields, $isAdditional) {
+    $contactID = NULL;
+    if (!$isAdditional) {
+      $contactID = $this->getContactID();
+    }
+    if (!$contactID && is_array($fields) && $fields) {
+      $contactID = CRM_Contact_BAO_Contact::getFirstDuplicateContact($fields, 'Individual', 'Unsupervised', [], FALSE, $this->getEventValue('dedupe_rule_group_id'), ['event_id' => $this->getEventID()]);
+    }
+    return $contactID;
+  }
+
+  /**
    * @param int $participantNum
    *
    * @return float|null
    * @throws \CRM_Core_Exception
    */
   public function getFeeAmountForParticipant(int $participantNum): ?float {
+    if (!$this->hasOrder()) {
+      return NULL;
+    }
+    return $this->getOrder()->getTotalAmountForIdentifier($this->getParticipantPageName($participantNum));
+  }
+
+  /**
+   * Get the line items submitted for a given participant.
+   *
+   * @param int $participantNum
+   *
+   * @return array
+   * @throws \CRM_Core_Exception
+   */
+  public function getLineItemsForParticipant(int $participantNum): array {
+    if (!$this->hasOrder()) {
+      return [];
+    }
+    return $this->getOrder()->getLineItemsForIdentifier($this->getParticipantPageName($participantNum));
+  }
+
+  /**
+   * Get the fee level text to register a participant with.
+   *
+   * Does not reproduce any adjustment hook_civicrm_eventDiscount might have
+   * made to this - that hook is documented upstream as outdated and unused,
+   * and nothing in core ever sets the fields it would need to react to.
+   *
+   * @param int $participantNumber
+   *
+   * @return string|null
+   * @throws \CRM_Core_Exception
+   */
+  public function getAmountLevelForParticipant(int $participantNumber): ?string {
     if (!$this->getPriceSetID()) {
       return NULL;
     }
-    return $this->getOrder()->getTotalAmountForIdentifier($participantNum);
+    $amountLevel = $this->getOrder()->getAmountLevelForIdentifier($this->getParticipantPageName($participantNumber));
+    if ($participantNumber === 0 && $this->getLineItems() && $this->isProcessRegistrationInRealTime()
+      && count($this->getAllSubmittedValues()) > 1
+    ) {
+      $amountLevel .= ' ' . ts('(multiple participants)') . CRM_Core_DAO::VALUE_SEPARATOR;
+    }
+    return $amountLevel;
+  }
+
+  /**
+   * @param int $participantNum
+   * @param int $contactID
+   */
+  protected function createCMSUser(int $participantNum, int $contactID): void {
+    // create CMS user
+    if ($this->getSubmittedParticipantValue('cms_create_account')) {
+      $participantRecord = $this->getSubmittedParticipantValues($participantNum);
+      $participantRecord['contactID'] = $contactID;
+
+      $billingEmail = 'email-' . CRM_Core_BAO_LocationType::getBilling();
+      if (array_key_exists($billingEmail, $participantRecord)) {
+        $mail = $billingEmail;
+      }
+      else {
+        foreach ($participantRecord as $name => $dontCare) {
+          if (substr($name, 0, 5) == 'email') {
+            $mail = $name;
+            break;
+          }
+        }
+      }
+
+      // we should use primary email for
+      // 1. pay later participant.
+      // 2. waiting list participant.
+      // 3. require approval participant.
+      if (!empty($participantRecord['is_pay_later']) ||
+        $this->_allowWaitlist || $this->_requireApproval
+      ) {
+        $mail = 'email-Primary';
+      }
+
+      if (!CRM_Core_BAO_CMSUser::create($participantRecord, $mail)) {
+        CRM_Core_Error::statusBounce(ts('Your profile is not saved and Account is not created.'));
+      }
+    }
+  }
+
+  /**
+   * @param int|null $contactID
+   * @param int $participantNumber
+   *
+   * @return int
+   * @throws \CRM_Core_Exception
+   */
+  protected function saveContact(?int $contactID, int $participantNumber): int {
+    $fields = [];
+    //add the contact to group, if add to group is selected for a
+    //particular uf group
+    if (!empty($this->_fields)) {
+      foreach ($this->_fields as $name => $dontCare) {
+        $fields[$name] = 1;
+      }
+    }
+    $params = $this->getSubmittedParticipantValues($participantNumber);
+
+    // If there's no 'first_name' in the profile then overwrite the names from
+    // the billing fields (if they are set)
+    if (is_array($fields)) {
+      if (!array_key_exists('first_name', $fields)) {
+        $nameFields = ['first_name', 'middle_name', 'last_name'];
+        foreach ($nameFields as $name) {
+          $fields[$name] = 1;
+          if (array_key_exists("billing_$name", $params)) {
+            $params[$name] = $params["billing_{$name}"];
+            $params['preserveDBName'] = TRUE;
+          }
+        }
+      }
+    }
+
+    // Add the billing names to the billing address, if a billing name is set
+    $billingLocationTypeID = CRM_Core_BAO_LocationType::getBilling();
+    if (!empty($params['billing_first_name'])) {
+      $params["address_name-{$billingLocationTypeID}"] = $params['billing_first_name'] . ' ' . ($params['billing_middle_name'] ?? '') . ' ' . ($params['billing_last_name'] ?? '');
+      $fields["address_name-{$billingLocationTypeID}"] = 1;
+    }
+
+    $fields["email-{$billingLocationTypeID}"] = 1;
+    $fields['email-Primary'] = 1;
+
+    //if its pay later or additional participant set email address as primary.
+    // Note that it seems this function may have been broken and then
+    // accidentally started working - causing https://lab.civicrm.org/dev/core/-/issues/5330 was
+    // I can't see what changed...
+    if (empty($params['email-Primary']) && (!empty($params['is_pay_later']) || empty($params['is_primary']) ||
+        !$this->isPaidEvent() ||
+        $this->_allowWaitlist ||
+        $this->_requireApproval
+      ) && !empty($params["email-{$billingLocationTypeID}"])
+    ) {
+      $params['email-Primary'] = $params["email-{$billingLocationTypeID}"];
+    }
+    //for free event or additional participant, dont create billing email address.
+    if (empty($params['is_primary'])) {
+      unset($params["email-" . CRM_Core_BAO_LocationType::getBilling()]);
+    }
+    // get the add to groups
+    $addToGroups = [];
+    if ($participantNumber === 0) {
+      $topProfile = 'custom_pre_id';
+      $additionalProfiles = 'custom_post_id';
+    }
+    else {
+      $topProfile = 'additional_custom_pre_id';
+      $additionalProfiles = 'additional_custom_post_id';
+    }
+    $profiles = $this->_values[$additionalProfiles] ?? [];
+    if (!empty($this->_values[$topProfile])) {
+      $profiles[] = $this->_values[$topProfile];
+    }
+    if (!empty($profiles)) {
+      $uFGroups = \Civi\Api4\UFGroup::get(FALSE)
+        ->addSelect('add_to_group_id')
+        ->addWhere('id', 'IN', $profiles)
+        ->execute();
+      foreach ($uFGroups as $uFGroup) {
+        if (!empty($uFGroup['add_to_group_id'])) {
+          $addToGroups[$uFGroup['add_to_group_id']] = $uFGroup['add_to_group_id'];
+        }
+      }
+    }
+
+    // check for profile double opt-in and get groups to be subscribed
+    $subscribeGroupIds = CRM_Core_BAO_UFGroup::getDoubleOptInGroupIds($params, $contactID);
+
+    foreach ($addToGroups as $k) {
+      if (array_key_exists($k, $subscribeGroupIds)) {
+        unset($addToGroups[$k]);
+      }
+    }
+
+    // since we are directly adding contact to group lets unset it from mailing
+    if (!empty($addToGroups)) {
+      foreach ($addToGroups as $groupId) {
+        if (isset($subscribeGroupIds[$groupId])) {
+          unset($subscribeGroupIds[$groupId]);
+        }
+      }
+    }
+    if ($contactID) {
+      $ctype = CRM_Core_DAO::getFieldValue(
+        'CRM_Contact_DAO_Contact',
+        $contactID,
+        'contact_type'
+      );
+
+      if (array_key_exists('contact_id', $params) && empty($params['contact_id'])) {
+        // we unset this here because the downstream function ignores the contactID we give it
+        // if it is set & it is difficult to understand the implications of 'fixing' this downstream
+        // but if we are passing a contact id into this function it's reasonable to assume we don't
+        // want it ignored
+        unset($params['contact_id']);
+      }
+
+      $contactID = CRM_Contact_BAO_Contact::createProfileContact(
+        $params,
+        $fields,
+        $contactID,
+        $addToGroups,
+        NULL,
+        $ctype,
+        TRUE
+      );
+    }
+    else {
+
+      foreach (CRM_Contact_BAO_Contact::$_greetingTypes as $greeting) {
+        if (!isset($params[$greeting . '_id'])) {
+          $params[$greeting . '_id'] = CRM_Contact_BAO_Contact_Utils::defaultGreeting('Individual', $greeting);
+        }
+      }
+
+      $contactID = CRM_Contact_BAO_Contact::createProfileContact($params,
+        $fields,
+        NULL,
+        $addToGroups,
+        NULL,
+        NULL,
+        TRUE
+      );
+      $this->set('contactID', $contactID);
+    }
+
+    //get email primary first if exist
+    $subscriptionEmail = ['email' => $params['email-Primary'] ?? NULL];
+    if (!$subscriptionEmail['email']) {
+      $subscriptionEmail['email'] = $params['email-' . CRM_Core_BAO_LocationType::getBilling()] ?? NULL;
+    }
+    // subscribing contact to groups
+    if (!empty($subscribeGroupIds) && $subscriptionEmail['email']) {
+      CRM_Mailing_Event_BAO_MailingEventSubscribe::commonSubscribe($subscribeGroupIds, $subscriptionEmail, $contactID);
+    }
+    // lets store the contactID in the session
+    // we dont store in userID in case the user is doing multiple
+    // transactions etc
+    // for things like tell a friend
+    if (!$this->getContactID() && $participantNumber === 0) {
+      CRM_Core_Session::singleton()->set('transaction.userID', $contactID);
+    }
+    return $contactID;
   }
 
   /**
@@ -854,156 +1143,63 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   }
 
   /**
-   * Handle process after the confirmation of payment by User.
-   *
-   * @param int $contactID
-   * @param array $participantRecord
-   * @param int $participantNum
-   *   The participant's slot number in $this->_params/$this->_lineItem (0 for
-   *   the primary, 1+ for additional participants) - skipped participants
-   *   are never passed in here, so this is not necessarily sequential.
-   *   _participantIDS must be keyed the same way _lineItem is, so that code
-   *   matching entities to line items (see Confirm::postProcess()) can look
-   *   up the right participant for a given slot even when earlier slots were
-   *   skipped.
-   *
-   * @throws \CRM_Core_Exception
-   */
-  public function confirmPostProcess($contactID, $participantRecord, int $participantNum = 0): void {
-    // add participant record
-    $participant = $this->addParticipant($participantRecord, $contactID, $participantNum);
-    $this->_participantIDS[$participantNum] = $participant->id;
-
-    //setting register_by_id field and primaryContactId
-    if (!empty($participantRecord['is_primary'])) {
-      $this->set('registerByID', $participant->id);
-      $this->set('primaryContactId', $contactID);
-
-      // CRM-10032
-      $this->processFirstParticipant($participant->id);
-    }
-
-    if (!empty($participantRecord['is_primary'])) {
-      $participantRecord['participantID'] = $participant->id;
-      $this->set('primaryParticipant', $participantRecord);
-    }
-
-    $this->assign('action', $this->_action);
-
-    // create CMS user
-    if (!empty($participantRecord['cms_create_account'])) {
-      $participantRecord['contactID'] = $contactID;
-
-      if (array_key_exists('email-5', $participantRecord)) {
-        $mail = 'email-5';
-      }
-      else {
-        foreach ($participantRecord as $name => $dontCare) {
-          if (substr($name, 0, 5) == 'email') {
-            $mail = $name;
-            break;
-          }
-        }
-      }
-
-      // we should use primary email for
-      // 1. pay later participant.
-      // 2. waiting list participant.
-      // 3. require approval participant.
-      if (!empty($participantRecord['is_pay_later']) ||
-        $this->_allowWaitlist || $this->_requireApproval
-      ) {
-        $mail = 'email-Primary';
-      }
-
-      if (!CRM_Core_BAO_CMSUser::create($participantRecord, $mail)) {
-        CRM_Core_Error::statusBounce(ts('Your profile is not saved and Account is not created.'));
-      }
-    }
-  }
-
-  /**
    * Process the participant.
    *
-   * @param array $params
    * @param int $contactID
    * @param $participantNumber
    *
-   * @return \CRM_Event_BAO_Participant
+   * @return int
    * @throws \CRM_Core_Exception
    */
-  private function addParticipant($params, $contactID, $participantNumber): CRM_Event_BAO_Participant {
+  protected function addParticipant($contactID, $participantNumber): int {
     $transaction = new CRM_Core_Transaction();
-    // handle register date CRM-4320
-    $registerDate = NULL;
-    if (!empty($this->_allowConfirmation) && $this->_participantId) {
-      $registerDate = $params['participant_register_date'];
-    }
-    elseif (!empty($params['participant_register_date']) &&
-      is_array($params['participant_register_date']) &&
-      !empty($params['participant_register_date'])
-    ) {
-      $registerDate = CRM_Utils_Date::format($params['participant_register_date']);
-    }
 
-    $participantFields = CRM_Event_DAO_Participant::fields();
-    $participantParams = [
-      'id' => $params['participant_id'] ?? NULL,
-      'contact_id' => $contactID,
-      'event_id' => $this->getEventID(),
-      'status_id' => $params['participant_status'] ?? 1,
-      'role_id' => $params['participant_role_id'] ?? CRM_Event_BAO_Participant::getDefaultRoleID(),
-      'register_date' => ($registerDate) ? $registerDate : date('YmdHis'),
-      'source' => CRM_Utils_String::ellipsify($params['participant_source'] ?? $params['description'] ?? '',
-        $participantFields['participant_source']['maxlength']
-      ),
-      'fee_level' => $params['amount_level'] ?? NULL,
-      'is_pay_later' => $params['is_pay_later'] ?? 0,
-      'fee_amount' => $this->getFeeAmountForParticipant($participantNumber),
-      'registered_by_id' => $params['registered_by_id'] ?? NULL,
-      'discount_id' => $params['discount_id'] ?? NULL,
-      'fee_currency' => $this->getCurrency(),
-      'campaign_id' => $params['campaign_id'] ?? NULL,
-      'is_test' => $this->isTest(),
-    ];
-
-    if (!empty($params['note'])) {
-      $participantParams['note'] = $params['note'];
-    }
-    elseif (!empty($params['participant_note'])) {
-      $participantParams['note'] = $params['participant_note'];
-    }
-
-    // reuse id if one already exists for this one (can happen
-    // with back button being hit etc)
-    if (!$participantParams['id'] && !empty($params['contributionID'])) {
-      $pID = CRM_Core_DAO::getFieldValue('CRM_Event_DAO_ParticipantPayment',
-        $params['contributionID'],
-        'participant_id',
-        'contribution_id'
-      );
-      $participantParams['id'] = $pID;
-    }
-    $participantParams['discount_id'] = CRM_Core_BAO_Discount::findSet($this->getEventID(), 'civicrm_event');
-
-    if (!$participantParams['discount_id']) {
-      $participantParams['discount_id'] = "null";
-    }
-
-    $participantParams['custom'] = [];
-    foreach ($params as $paramName => $paramValue) {
-      if (str_starts_with($paramName, 'custom_')) {
-        [$customFieldID, $customValueID] = CRM_Core_BAO_CustomField::getKeyID($paramName, TRUE);
-        CRM_Core_BAO_CustomField::formatCustomField($customFieldID, $participantParams['custom'], $paramValue, 'Participant', $customValueID);
-
-      }
-    }
-
-    $participant = CRM_Event_BAO_Participant::create($participantParams);
-
+    $participantID = (int) Participant::save(FALSE)->addRecord($this->getParticipantParams($contactID, $participantNumber))->execute()->single()['id'];
+    $this->_participantIDS[$participantNumber] = $participantID;
     $transaction->commit();
 
-    return $participant;
+    return $participantID;
+  }
+
+  /**
+   * Get the params for creating or updating a participant record.
+   *
+   * @param int $contactID
+   * @param $participantNumber
+   *
+   * @return array
+   * @throws \CRM_Core_Exception
+   */
+  protected function getParticipantParams($contactID, $participantNumber): array {
+    $participantParams = [
+      'id' => $this->getExistingParticipantID($participantNumber),
+      'contact_id' => $contactID,
+      'event_id' => $this->getEventID(),
+      'status_id' => $this->getParticipantStatusID($participantNumber),
+      'role_id' => $this->getRoleID($participantNumber),
+      'source' => $this->getSource($participantNumber),
+      'fee_level' => $this->getAmountLevelForParticipant($participantNumber),
+      'is_pay_later' => $this->getIsPayLaterForParticipant($participantNumber),
+      'fee_amount' => $this->getFeeAmountForParticipant($participantNumber),
+      'registered_by_id' => $this->getRegisteredByID($participantNumber),
+      'fee_currency' => $this->getCurrency(),
+      'campaign_id' => $this->getCampaignID($participantNumber),
+      'is_test' => $this->isTest(),
+    ] + $this->getSubmittedCustomFields(4, 'Participant', $this->getSubmittedParticipantValues($participantNumber));
+    // On a fresh registration there is no existing participant row to preserve
+    // register_date from, and the field has no db-level default.
+    if (empty($participantParams['id'])) {
+      $participantParams['register_date'] = date('YmdHis');
+    }
+
+    $note = $this->getSubmittedParticipantValue('note', $participantNumber) ?: $this->getSubmittedParticipantValue('participant_note', $participantNumber);
+    if (!empty($note)) {
+      $participantParams['note'] = $note;
+    }
+
+    $participantParams['discount_id'] = $this->getDiscountID();
+
+    return $participantParams;
   }
 
   /**
@@ -1046,10 +1242,10 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     $optionFullIds = [];
     $selectedSelectPriceFieldIds = [];
     if ($field['html_type'] === 'Select') {
-      if ($this->getParticipantID()) {
+      if ($this->getPrimaryParticipantID()) {
         $selectedSelectPriceFieldIds = LineItem::get(FALSE)
           ->addWhere('entity_table', '=', 'civicrm_participant')
-          ->addWhere('entity_id', '=', $this->getParticipantID())
+          ->addWhere('entity_id', '=', $this->getPrimaryParticipantID())
           ->execute()->column('price_field_value_id');
       }
     }
@@ -1099,7 +1295,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
    */
   protected function getUsedSeatsCount(int $priceFieldValueID) : int {
     $skipParticipants = [];
-    if (!empty($this->_allowConfirmation) && (isset($this->_pId) || isset($this->_additionalParticipantId))) {
+    if (!empty($this->_allowConfirmation) && ($this->getParticipantID($this->getParticipantIndex()) || isset($this->_additionalParticipantId))) {
       // to skip current registered participants fields option count on confirmation.
       $skipParticipants[] = $this->_participantId;
       if (!empty($this->_additionalParticipantIds)) {
@@ -1203,12 +1399,56 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   /**
    * Get id of participant being acted on.
    *
+   * Index 0 (the default) is the primary participant. An additional
+   * participant is retrieved by the 1-based index used in
+   * $this->_additionalParticipantIds (see getParticipantIndex()).
+   *
    * @api This function will not change in a minor release and is supported for
    * use outside of core. This annotation / external support for properties
    * is only given where there is specific test cover.
    */
-  public function getParticipantID(): ?int {
-    return $this->_participantId;
+  public function getParticipantID(int $index = 0): ?int {
+    if ($index === 0) {
+      return $this->_participantId ?? $this->_participantIDS[0] ?? NULL;
+    }
+    return $this->_additionalParticipantIds[$index] ?? NULL;
+  }
+
+  /**
+   * Get the primary participant ID.
+   *
+   * Wrapper for getParticipantID to make the intent clear.
+   *
+   * @return int|null
+   */
+  public function getPrimaryParticipantID(): ?int {
+    return $this->getParticipantID();
+  }
+
+  /**
+   * Get the index of the participant being acted on by the current step.
+   *
+   * 0 for the primary participant; overridden to return the 1-based
+   * additional-participant index on the additional-participant step.
+   */
+  protected function getParticipantIndex(): int {
+    return 0;
+  }
+
+  /**
+   * Get id of the contribution covering this registration, if one was
+   * created - set via Confirm::postProcess() once known, NULL for a free
+   * event (no contribution is ever created) or if real-time processing
+   * didn't reach contribution creation.
+   *
+   * @api This function will not change in a minor release and is supported for
+   * use outside of core. This annotation / external support for properties
+   * is only given where there is specific test cover.
+   *
+   * @return int|null
+   */
+  public function getContributionID(): ?int {
+    return $this->get('contributionID');
   }
 
   /**
@@ -1669,30 +1909,222 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   }
 
   /**
-   * Set the first participant ID if not set.
+   * Get a submitted value for a specific participant.
    *
-   * CRM-10032.
+   * @param string $fieldName
+   * @param int $participantIndex
+   *   0 for the primary participant (Register/Confirm/ThankYou), 1+ for an
+   *   additional participant (the Nth AdditionalParticipant page).
    *
-   * @param int $participantID
+   * @return mixed|null
    */
-  public function processFirstParticipant($participantID) {
-    $this->_participantId = $participantID;
-    $this->set('participantId', $this->_participantId);
+  public function getSubmittedParticipantValue(string $fieldName, int $participantIndex = 0) {
+    return $this->getSubmittedParticipantValues($participantIndex)[$fieldName] ?? NULL;
+  }
 
-    $ids = $participantValues = [];
-    $participantParams = ['id' => $this->_participantId];
-    CRM_Event_BAO_Participant::getValues($participantParams, $participantValues, $ids);
-    $this->_values['participant'] = $participantValues[$this->_participantId];
-    $this->set('values', $this->_values);
-
-    // also set the allow confirmation stuff
-    if (array_key_exists(
-      $this->_values['participant']['status_id'],
-      CRM_Event_PseudoConstant::participantStatus(NULL, "class = 'Pending'")
-    )) {
-      $this->_allowConfirmation = TRUE;
-      $this->set('allowConfirmation', TRUE);
+  /**
+   * Get all submitted values for a specific participant.
+   *
+   * @param int $participantIndex
+   *   0 for the primary participant (Register/Confirm/ThankYou), 1+ for an
+   *   additional participant (the Nth AdditionalParticipant page).
+   *
+   * @return array
+   */
+  protected function getSubmittedParticipantValues(int $participantIndex = 0): array {
+    $pageName = $this->getParticipantPageName($participantIndex);
+    if ($participantIndex !== 0 && $this->getName() === $pageName) {
+      return $this->getSubmittedValues();
     }
+    return $this->getAllSubmittedValues()[$pageName] ?? [];
+  }
+
+  /**
+   * @return string
+   * @throws \Random\RandomException
+   */
+  protected function getInvoiceID(): string {
+    if (!$this->get('invoiceID')) {
+      // generate and set an invoiceID for this transaction
+      $this->set('invoiceID', bin2hex(random_bytes(16)));
+    }
+    return $this->get('invoiceID');
+  }
+
+  /**
+   * Get the name of the wizard page a participant's values are submitted
+   * on - 'Register' for the primary (0), 'Participant_N' for additional
+   * participants - matching the keys setPriceSelectionFromUnfilteredMultiFormInput()
+   * tags line items with via getAllSubmittedValues(), and what
+   * controller->exportValues() expects as a page name.
+   *
+   * @param int $participantNumber
+   *
+   * @return string
+   */
+  private function getParticipantPageName(int $participantNumber): string {
+    return $participantNumber === 0 ? 'Register' : 'Participant_' . $participantNumber;
+  }
+
+  /**
+   * Get the status to register a participant with.
+   *
+   * @param int $participantNumber
+   *
+   * @return int
+   * @throws \CRM_Core_Exception
+   */
+  protected function getParticipantStatusID(int $participantNumber): int {
+    return $this->getWaitlistOrApprovalStatusID()
+      ?? $this->getPendingStatusID($participantNumber)
+      ?? CRM_Core_PseudoConstant::getKey('CRM_Event_DAO_Participant', 'status_id', 'Registered');
+  }
+
+  /**
+   * Get the status to register a participant with if the event is full
+   * (and has a waitlist) or requires approval - these take priority over
+   * any other status.
+   *
+   * @return int|null
+   */
+  protected function getWaitlistOrApprovalStatusID(): ?int {
+    if ($this->_allowWaitlist) {
+      return CRM_Core_PseudoConstant::getKey('CRM_Event_DAO_Participant', 'status_id', 'On waitlist');
+    }
+    if ($this->_requireApproval) {
+      return CRM_Core_PseudoConstant::getKey('CRM_Event_DAO_Participant', 'status_id', 'Awaiting approval');
+    }
+    return NULL;
+  }
+
+  /**
+   * Get the status to register a participant with if their registration
+   * is paid, the order has a non-zero total, and either is pay-later or is
+   * otherwise not resolved to a definite payment outcome within this
+   * request (a noReturn processor, which does not confirm payment
+   * synchronously).
+   *
+   * @param int $participantNumber
+   *
+   * @return int|null
+   * @throws \CRM_Core_Exception
+   */
+  protected function getPendingStatusID(int $participantNumber): ?int {
+    // Per historical behaviour - we do not put registrations to pending if
+    // the event has a cost (for ANY of the participants). In theory a primary
+    // participant with a cost of $0 would be pending if one of the later ones had
+    // a cost. Unclear if this is by design or oversight.
+    if (!$this->isPaidEvent() || $this->getOrder()->getTotalAmount() == 0) {
+      return NULL;
+    }
+    $isPayLater = $this->getIsPayLaterForParticipant($participantNumber);
+    if (!($isPayLater || $this->getPaymentProcessorObject()->supports('noReturn'))) {
+      return NULL;
+    }
+    return CRM_Core_PseudoConstant::getKey('CRM_Event_DAO_Participant', 'status_id', $isPayLater ? 'Pending from pay later' : 'Pending from incomplete transaction');
+  }
+
+  /**
+   * Is this participant's registration being processed as pay-later.
+   *
+   * @param int $participantNumber
+   *
+   * @return bool
+   */
+  protected function getIsPayLaterForParticipant(int $participantNumber): bool {
+    if ($this->_allowWaitlist || $this->_requireApproval) {
+      return FALSE;
+    }
+    if ($this->isShowPaymentOnConfirm()) {
+      return $this->isPayLater();
+    }
+    return (bool) ($this->_params[$participantNumber]['is_pay_later'] ?? FALSE);
+  }
+
+  /**
+   * Get the id of an existing participant row to update for this slot,
+   * rather than creating a new one - set via Register.php/
+   * AdditionalParticipant.php when re-walking an already-confirmed
+   * registration (back button etc), or when the caller otherwise submitted
+   * an explicit participant_id for this slot.
+   *
+   * @param int $participantNumber
+   *
+   * @return int|null
+   */
+  protected function getExistingParticipantID(int $participantNumber): ?int {
+    return $this->_params[$participantNumber]['participant_id'] ?? NULL;
+  }
+
+  /**
+   * Get the id of the primary registrant, for an additional participant's
+   * registered_by_id - set once the primary has been created, before any
+   * additional participant is processed.
+   *
+   * @param int $participantNumber
+   *
+   * @return int|null
+   */
+  protected function getRegisteredByID(int $participantNumber): ?int {
+    return $participantNumber === 0 ? NULL : $this->getPrimaryParticipantID();
+  }
+
+  /**
+   * Get the role to register a participant with.
+   *
+   * @param int $participantNumber
+   *
+   * @return int
+   */
+  protected function getRoleID(int $participantNumber): int {
+    return $this->getSubmittedParticipantValue('participant_role', $participantNumber)
+      ?: $this->getEventValue('default_role_id')
+      ?: CRM_Event_BAO_Participant::getDefaultRoleID();
+  }
+
+  /**
+   * Get the campaign to record against a participant (and their contribution).
+   *
+   * Priority is given to any submitted value, then to a value passed in the url,
+   * then to the event default.
+   *
+   * @param int $participantNumber
+   *
+   * @return int|null
+   */
+  public function getCampaignID(int $participantNumber): ?int {
+    $submittedValues = $this->getSubmittedParticipantValues($participantNumber);
+    if (array_key_exists('participant_campaign_id', $submittedValues)) {
+      return $submittedValues['participant_campaign_id'];
+    }
+    if ($this->get('campID')) {
+      return $this->get('campID');
+    }
+    $campaignIDFromUrl = CRM_Utils_Request::retrieve('campID', 'Positive', $this);
+    if ($campaignIDFromUrl) {
+      if (CRM_Core_DAO::getFieldValue('CRM_Campaign_DAO_Campaign', $campaignIDFromUrl)) {
+        return $campaignIDFromUrl;
+      }
+      $this->set('campID', NULL);
+    }
+    return $this->getEventValue('campaign_id');
+  }
+
+  /**
+   * Get the source to record against a participant.
+   *
+   * 'participant_source' is an importable Participant field, so a site can
+   * add it to the registration profile and let registrants fill it in
+   * themselves - that submission takes precedence. Otherwise this falls
+   * back to the same system-generated description for every participant.
+   *
+   * @param int $participantNumber
+   *
+   * @return string
+   */
+  public function getSource(int $participantNumber): string {
+    return $this->getSubmittedParticipantValue('participant_source', $participantNumber)
+      ?: (ts('Online Event Registration') . ': ' . $this->getEventValue('title'));
   }
 
   /**
@@ -1713,31 +2145,6 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   }
 
   /**
-   * Get the amount level for the event payment.
-   *
-   * The amount level is the string stored on the contribution record that describes the purchase.
-   *
-   * @param array $params
-   * @param int|null $discountID
-   *
-   * @return string
-   */
-  protected function getAmountLevel($params, $discountID) {
-    // @todo move handling of discount ID to the BAO function - preferably by converting it to a price_set with
-    // time settings.
-    if (!empty($this->_values['discount'][$discountID])) {
-      return $this->_values['discount'][$discountID][$params['amount']]['label'];
-    }
-    if (empty($params['priceSetId'])) {
-      // CRM-17509 An example of this is where the person is being waitlisted & there is no payment.
-      // ideally we would have calculated amount first & only call this is there is an
-      // amount but the flow needs more changes for that.
-      return '';
-    }
-    return CRM_Price_BAO_PriceSet::getAmountLevelText($params);
-  }
-
-  /**
    * Process Registration of free event.
    *
    * @param array $params
@@ -1746,7 +2153,6 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
    * @throws \CRM_Core_Exception
    */
   public function processRegistration($params) {
-    $session = CRM_Core_Session::singleton();
     $participantInfo = [];
 
     // CRM-4320, lets build array of cancelled additional participant ids
@@ -1754,28 +2160,14 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     // get all in and then unset those are confirmed.
     $cancelledIds = $this->_additionalParticipantIds;
 
-    $participantCount = [];
-    foreach ($params as $participantNum => $record) {
-      if ($record == 'skip') {
-        $participantCount[$participantNum] = 'skip';
-      }
-      elseif ($participantNum) {
-        $participantCount[$participantNum] = 'participant';
-      }
-    }
-
     $registerByID = NULL;
     foreach ($params as $key => $value) {
       if ($value != 'skip') {
-        $fields = NULL;
 
         // setting register by Id and unset contactId.
         if (empty($value['is_primary'])) {
           $contactID = NULL;
-          $registerByID = $this->get('registerByID');
-          if ($registerByID) {
-            $value['registered_by_id'] = $registerByID;
-          }
+          $registerByID = $this->getPrimaryParticipantID();
           // get an email if one exists for the participant
           $participantEmail = '';
           foreach (array_keys($value) as $valueName) {
@@ -1797,33 +2189,25 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
           $contactID = $this->getContactID();
         }
 
-        CRM_Event_Form_Registration_Confirm::fixLocationFields($value, $fields, $this);
-        //for free event or additional participant, dont create billing email address.
-        if (empty($value['is_primary'])) {
-          unset($value["email-{$this->_bltID}"]);
+        $contactID = $this->saveContact($contactID, $key);
+
+        $participantNum = $key;
+        $participantRecord = $value;
+        // add participant record
+        $participantID = $this->addParticipant($contactID, $participantNum);
+
+        if (!empty($participantRecord['is_primary'])) {
+          // CRM-10032
+          $this->_participantId = $participantID;
+
+          if ($this->getParticipantValue('status_id.class') === 'Pending') {
+            $this->_allowConfirmation = TRUE;
+          }
+          $participantRecord['participantID'] = $participantID;
+          $this->set('primaryParticipant', $participantRecord);
         }
 
-        $contactID = CRM_Event_Form_Registration_Confirm::updateContactFields($contactID, $value, $fields, $this);
-
-        // lets store the contactID in the session
-        // we dont store in userID in case the user is doing multiple
-        // transactions etc
-        // for things like tell a friend
-        if (!$this->getContactID() && !empty($value['is_primary'])) {
-          $session->set('transaction.userID', $contactID);
-        }
-
-        //lets get the status if require approval or waiting.
-
-        $waitingStatuses = CRM_Event_PseudoConstant::participantStatus(NULL, "class = 'Waiting'");
-        if ($this->_allowWaitlist && !$this->_allowConfirmation) {
-          $value['participant_status_id'] = $value['participant_status'] = array_search('On waitlist', $waitingStatuses);
-        }
-        elseif ($this->_requireApproval && !$this->_allowConfirmation) {
-          $value['participant_status_id'] = $value['participant_status'] = array_search('Awaiting approval', $waitingStatuses);
-        }
-
-        $this->confirmPostProcess($contactID, $value, $key);
+        $this->createCMSUser($participantNum, $contactID);
 
         //lets get additional participant id to cancel.
         if ($this->_allowConfirmation && is_array($cancelledIds)) {
@@ -1851,7 +2235,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     if (!$this->isPaidEvent() || $this->getPaymentProcessorObject()->supports('noReturn')
     ) {
       // Send mail Confirmation/Receipt.
-      $this->sendMails($params, $registerByID, $participantCount);
+      $this->sendMails($params);
     }
   }
 
@@ -1859,46 +2243,14 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
    * Send Mail to participants.
    *
    * @param $params
-   * @param $registerByID
-   * @param array $participantCount
    *
    * @throws \CRM_Core_Exception
    */
-  private function sendMails($params, $registerByID, array $participantCount) {
-    $isTest = FALSE;
-    if ($this->_action & CRM_Core_Action::PREVIEW) {
-      $isTest = TRUE;
-    }
-
-    //handle if no additional participant.
-    if (!$registerByID) {
-      $registerByID = $this->get('registerByID');
-    }
-    $primaryContactId = $this->get('primaryContactId');
-
-    //build an array of custom profile and assigning it to template.
-    // @todo - don't call buildCustomProfile to get additionalParticipants.
-    // CRM_Event_BAO_Participant::getAdditionalParticipantIds is a better fit.
-    $additionalIDs = CRM_Event_BAO_Event::buildCustomProfile($registerByID, NULL,
-      $primaryContactId, $isTest, TRUE
-    );
+  private function sendMails($params) {
+    $isTest = $this->isTest();
 
     //lets carry all participant params w/ values.
-    foreach ($additionalIDs as $participantID => $contactId) {
-      $participantNum = NULL;
-      if ($participantID == $registerByID) {
-        $participantNum = 0;
-      }
-      else {
-        if ($participantNum = array_search('participant', $participantCount)) {
-          unset($participantCount[$participantNum]);
-        }
-      }
-
-      if ($participantNum === NULL) {
-        break;
-      }
-
+    foreach ($this->_participantIDS as $participantNum => $participantID) {
       //carry the participant submitted values.
       $this->_values['params'][$participantID] = $params[$participantNum];
     }
@@ -1906,9 +2258,9 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
     //lets send  mails to all with meanigful text, CRM-4320.
     $this->assign('isRequireApproval', $this->_requireApproval);
 
-    foreach ($additionalIDs as $participantID => $contactId) {
+    foreach ($this->_participantIDS as $participantID) {
       // Send Confirmation mail to Primary & additional Participants if exists
-      CRM_Event_BAO_Event::sendMail($contactId, $this->_values, $participantID, $isTest);
+      CRM_Event_BAO_Event::sendMail(NULL, $this->_values, $participantID, $isTest);
     }
   }
 
@@ -1938,6 +2290,189 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   protected function getDiscountID(): ?int {
     $id = CRM_Core_BAO_Discount::findSet($this->getEventID(), 'civicrm_event');
     return $id ?: NULL;
+  }
+
+  /**
+   * This function sets the default values for the form in edit/view mode.
+   *
+   * @return array
+   */
+  protected function setFeeDefaults(): array {
+    $defaults = [];
+    $billingLocationTypeID = CRM_Core_BAO_LocationType::getBilling();
+    $participantID = $this->getParticipantID($this->getParticipantIndex());
+
+    if ($participantID) {
+      $ids = [];
+      $params = ['id' => $participantID];
+
+      CRM_Event_BAO_Participant::getValues($params, $defaults, $ids);
+      $defaults += $defaults[$participantID];
+      unset($defaults[$participantID]);
+      if ($this->_action == CRM_Core_Action::UPDATE) {
+        $this->assign('fee_amount', $defaults['fee_amount'] ?? NULL);
+        $this->assign('fee_level', $defaults['fee_level'] ?? NULL);
+      }
+    }
+
+    if ($this->_mode) {
+      $config = CRM_Core_Config::singleton();
+      // set default country from config if no country set
+      if (empty($defaults["billing_country_id-{$billingLocationTypeID}"])) {
+        $defaults["billing_country_id-{$billingLocationTypeID}"] = $config->defaultContactCountry;
+      }
+
+      if (empty($defaults["billing_state_province_id-{$billingLocationTypeID}"])) {
+        $defaults["billing_state_province_id-{$billingLocationTypeID}"] = $config->defaultContactStateProvince;
+      }
+
+      $billingDefaults = $this->getProfileDefaults('Billing', $this->getContactID());
+      $defaults = array_merge($defaults, $billingDefaults);
+    }
+
+    $discountId = $this->getDiscountID();
+
+    if ($discountId) {
+      $priceSetId = CRM_Core_DAO::getFieldValue('CRM_Core_BAO_Discount', $discountId, 'price_set_id');
+    }
+    else {
+      $priceSetId = CRM_Price_BAO_PriceSet::getFor('civicrm_event', $this->_eventId);
+    }
+
+    if (($this->_action == CRM_Core_Action::ADD) && $this->getEventID() && $discountId) {
+      // this case is for add mode, where we show discount automatically
+      $defaults['discount_id'] = $discountId;
+    }
+
+    if ($priceSetId) {
+      // get price set default values, CRM-4090
+      $priceSetValues = $this->setDefaultPriceSet($participantID, $this->getEventID());
+      if (!empty($priceSetValues)) {
+        $defaults = array_merge($defaults, $priceSetValues);
+      }
+
+      if ($this->_action == CRM_Core_Action::ADD && !empty($this->_priceSet['fields'])) {
+        foreach ($this->_priceSet['fields'] as $key => $val) {
+          foreach ($val['options'] as $keys => $values) {
+            if ($values['is_default']) {
+              if (!in_array(get_class($this), ['CRM_Event_Form_Task_Register']) && !empty($values['is_full'])) {
+                continue;
+              }
+
+              if ($val['html_type'] == 'CheckBox') {
+                $defaults["price_{$key}"][$keys] = 1;
+              }
+              else {
+                $defaults["price_{$key}"] = $keys;
+              }
+            }
+          }
+        }
+      }
+
+      $this->assign('totalAmount', $defaults['fee_amount'] ?? NULL);
+      if ($this->_action == CRM_Core_Action::UPDATE) {
+        $fee_level = $defaults['fee_level'];
+        CRM_Event_BAO_Participant::fixEventLevel($fee_level);
+        $this->assign('fee_level', $fee_level);
+        $this->assign('fee_amount', $defaults['fee_amount'] ?? NULL);
+      }
+    }
+
+    //CRM-4453
+    if (!empty($defaults['participant_fee_currency'])) {
+      $this->assign('fee_currency', $defaults['participant_fee_currency']);
+      $this->assign('currency', $defaults['participant_fee_currency']);
+    }
+
+    $defaults['contribution_status_id'] = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
+    return $defaults;
+  }
+
+  /**
+   * This function sets the default values for price set.
+   *
+   * @param int $participantID
+   * @param int $eventID
+   * @param bool $includeQtyZero
+   *
+   * @return array
+   */
+  private function setDefaultPriceSet($participantID, $eventID = NULL, $includeQtyZero = TRUE) {
+    $defaults = [];
+    if (!$eventID && $participantID) {
+      $eventID = CRM_Core_DAO::getFieldValue('CRM_Event_DAO_Participant', $participantID, 'event_id');
+    }
+    if (!$participantID || !$eventID) {
+      return $defaults;
+    }
+
+    // get price set ID.
+    $priceSetID = CRM_Price_BAO_PriceSet::getFor('civicrm_event', $eventID);
+    if (!$priceSetID) {
+      return $defaults;
+    }
+
+    // use line items for setdefault price set fields, CRM-4090
+    $lineItems[$participantID] = CRM_Price_BAO_LineItem::getLineItems($participantID, 'participant', FALSE, $includeQtyZero);
+
+    if (is_array($lineItems[$participantID]) &&
+      !CRM_Utils_System::isNull($lineItems[$participantID])
+    ) {
+
+      $priceFields = $htmlTypes = $optionValues = [];
+      foreach ($lineItems[$participantID] as $lineId => $items) {
+        $priceFieldId = $items['price_field_id'] ?? NULL;
+        $priceOptionId = $items['price_field_value_id'] ?? NULL;
+        if ($priceFieldId && $priceOptionId) {
+          $priceFields[$priceFieldId][] = $priceOptionId;
+        }
+      }
+
+      if (empty($priceFields)) {
+        return $defaults;
+      }
+
+      // get all price set field html types.
+      $sql = '
+SELECT  id, html_type
+  FROM  civicrm_price_field
+ WHERE  id IN (' . implode(',', array_keys($priceFields)) . ')';
+      $fieldDAO = CRM_Core_DAO::executeQuery($sql);
+      while ($fieldDAO->fetch()) {
+        $htmlTypes[$fieldDAO->id] = $fieldDAO->html_type;
+      }
+
+      foreach ($lineItems[$participantID] as $lineId => $items) {
+        $fieldId = $items['price_field_id'];
+        $htmlType = $htmlTypes[$fieldId] ?? NULL;
+        if (!$htmlType) {
+          continue;
+        }
+
+        if ($htmlType == 'Text') {
+          $defaults["price_{$fieldId}"] = $items['qty'];
+        }
+        else {
+          $fieldOptValues = $priceFields[$fieldId] ?? NULL;
+          if (!is_array($fieldOptValues)) {
+            continue;
+          }
+
+          foreach ($fieldOptValues as $optionId) {
+            if ($htmlType == 'CheckBox') {
+              $defaults["price_{$fieldId}"][$optionId] = TRUE;
+            }
+            else {
+              $defaults["price_{$fieldId}"] = $optionId;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return $defaults;
   }
 
   /**
@@ -2005,20 +2540,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
    */
   protected function buildAmount(): void {
     $form = $this;
-    $discountId = NULL;
     $feeFields = $this->getPriceFieldMetaData();
-
-    //check for discount.
-    $discountedFee = $form->_values['discount'] ?? NULL;
-    if (is_array($discountedFee) && !empty($discountedFee)) {
-      CRM_Core_Error::deprecatedWarning('code believed to be unreachable.');
-      if (!$discountId) {
-        $form->_discountId = $discountId = CRM_Core_BAO_Discount::findSet($form->_eventId, 'civicrm_event');
-      }
-      if ($discountId) {
-        $feeFields = &$form->_values['discount'][$discountId];
-      }
-    }
 
     //reset required if participant is skipped.
     $button = substr($form->controller->getButtonName(), -4);
@@ -2142,7 +2664,7 @@ class CRM_Event_Form_Registration extends CRM_Core_Form {
   protected function isPaidEvent(): bool {
     $isPaid = $this->getEventValue('is_monetary');
     if ($isPaid && !$this->getPriceFieldMetaData()) {
-      CRM_Core_Error::statusBounce(ts('Click <a href=\'%1\'>CiviEvent >> Manage Event >> Configure >> Event Fees</a> to configure the Fee Level(s) or Price Set for this event.', [1 => CRM_Utils_System::url('civicrm/event/manage/fee', 'reset=1&action=update&id=' . $this->_eventId)]), $this->getInfoPageUrl(), ts('No Fee Level(s) or Price Set is configured for this event.'));
+      CRM_Core_Error::statusBounce(ts("Click <a href='%1'>CiviEvent >> Manage Event >> Configure >> Event Fees</a> to configure the Fee Level(s) or Price Set for this event.", [1 => CRM_Utils_System::url('civicrm/event/manage/fee', 'reset=1&action=update&id=' . $this->_eventId)]), $this->getInfoPageUrl(), ts('No Fee Level(s) or Price Set is configured for this event.'));
     }
     return $isPaid;
   }

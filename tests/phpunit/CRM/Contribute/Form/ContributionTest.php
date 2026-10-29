@@ -27,7 +27,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   use CRMTraits_PCP_PCPTestTrait;
   use FormTrait;
 
-  protected int $financialTypeID = 1;
+  protected int $financialTypeID;
   protected $_params;
 
   /**
@@ -56,6 +56,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    */
   public function setUp(): void {
     parent::setUp();
+    $this->financialTypeID = $this->getFinancialTypeID('Donation');
     $this->createLoggedInUser();
     $this->callApiV3Success('Extension', 'install', ['keys' => 'civiimport']);
     $this->individualCreate([], 0);
@@ -112,7 +113,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
 
     $this->submitContributionForm([
       'total_amount' => 2,
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 2,
@@ -145,7 +146,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->setCurrencySeparators($thousandSeparator);
     $this->submitContributionForm([
       'total_amount' => $this->formatMoneyInput(1234),
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -162,7 +163,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testSubmitCreditCard(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'contribution_status_id' => 1,
@@ -177,9 +178,10 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * Test the submit function on the contribution page.
    */
   public function testSubmitCreditCardDummyProcessor(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $form = $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'contribution_status_id' => 1,
       'credit_card_number' => 4444333322221111,
@@ -192,11 +194,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'billing_first_name' => 'Junko',
       'billing_middle_name' => '',
       'billing_last_name' => 'Adams',
-      'billing_street_address-5' => '790L Lincoln St S',
-      'billing_city-5' => 'Mary Knoll',
-      'billing_state_province_id-5' => 1031,
-      'billing_postal_code-5' => 10545,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '790L Lincoln St S',
+      "billing_city-$billingLocationTypeID" => 'Mary Knoll',
+      "billing_state_province_id-$billingLocationTypeID" => 1031,
+      "billing_postal_code-$billingLocationTypeID" => 10545,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'frequency_interval' => 1,
       'frequency_unit' => 'month',
       'installments' => '',
@@ -232,9 +234,10 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * Test the submit function on the contribution page
    */
   public function testSubmitCreditCardWithEmailReceipt(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $form = $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'contribution_status_id' => 1,
       'credit_card_number' => 4444333322221111,
@@ -247,11 +250,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'billing_first_name' => 'Junko',
       'billing_middle_name' => '',
       'billing_last_name' => 'Adams',
-      'billing_street_address-5' => '790L Lincoln St S',
-      'billing_city-5' => 'Mary Knoll',
-      'billing_state_province_id-5' => 1031,
-      'billing_postal_code-5' => 10545,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '790L Lincoln St S',
+      "billing_city-$billingLocationTypeID" => 'Mary Knoll',
+      "billing_state_province_id-$billingLocationTypeID" => 1031,
+      "billing_postal_code-$billingLocationTypeID" => 10545,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'frequency_interval' => 1,
       'frequency_unit' => 'month',
       'installments' => '',
@@ -283,13 +286,14 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * Test the submit function on the contribution page.
    */
   public function testSubmitCreditCardNoReceipt(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $mut = new CiviMailUtils($this, TRUE);
     $mut->clearMessages();
     $error = FALSE;
     try {
       $this->submitContributionForm([
         'total_amount' => 60,
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'contact_id' => $this->ids['Contact'][0],
         'contribution_status_id' => 1,
         'credit_card_number' => 4444333322221111,
@@ -302,11 +306,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
         'billing_first_name' => 'Junko',
         'billing_middle_name' => '',
         'billing_last_name' => 'Adams',
-        'billing_street_address-5' => '790L Lincoln St S',
-        'billing_city-5' => 'Mary Knoll',
-        'billing_state_province_id-5' => 1031,
-        'billing_postal_code-5' => 10545,
-        'billing_country_id-5' => 1228,
+        "billing_street_address-$billingLocationTypeID" => '790L Lincoln St S',
+        "billing_city-$billingLocationTypeID" => 'Mary Knoll',
+        "billing_state_province_id-$billingLocationTypeID" => 1031,
+        "billing_postal_code-$billingLocationTypeID" => 10545,
+        "billing_country_id-$billingLocationTypeID" => 1228,
         'frequency_interval' => 1,
         'frequency_unit' => 'month',
         'installments' => '',
@@ -343,10 +347,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * Test the submit function on the contribution page.
    */
   public function testSubmitCreditCardFee(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $this->paymentProcessor->setDoDirectPaymentResult(['payment_status_id' => 1, 'is_error' => 0, 'trxn_id' => 'tx', 'fee_amount' => .08]);
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'contribution_status_id' => 1,
@@ -360,11 +365,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'billing_first_name' => 'Junko',
       'billing_middle_name' => '',
       'billing_last_name' => 'Adams',
-      'billing_street_address-5' => '790L Lincoln St S',
-      'billing_city-5' => 'Mary Knoll',
-      'billing_state_province_id-5' => 1031,
-      'billing_postal_code-5' => 10545,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '790L Lincoln St S',
+      "billing_city-$billingLocationTypeID" => 'Mary Knoll',
+      "billing_state_province_id-$billingLocationTypeID" => 1031,
+      "billing_postal_code-$billingLocationTypeID" => 10545,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'frequency_interval' => 1,
       'frequency_unit' => 'month',
       'installments' => '',
@@ -393,9 +398,10 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * Test a fully deductible contribution submitted by credit card (CRM-16669).
    */
   public function testSubmitCreditCardFullyDeductible(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $this->getTestForm('CRM_Contribute_Form_Contribution', [
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'contribution_status_id' => 1,
@@ -409,11 +415,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'billing_first_name' => 'Junko',
       'billing_middle_name' => '',
       'billing_last_name' => 'Adams',
-      'billing_street_address-5' => '790L Lincoln St S',
-      'billing_city-5' => 'Mary Knoll',
-      'billing_state_province_id-5' => 1031,
-      'billing_postal_code-5' => 10545,
-      'billing_country_id-5' => 1228,
+      "billing_street_address-$billingLocationTypeID" => '790L Lincoln St S',
+      "billing_city-$billingLocationTypeID" => 'Mary Knoll',
+      "billing_state_province_id-$billingLocationTypeID" => 1031,
+      "billing_postal_code-$billingLocationTypeID" => 10545,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'frequency_interval' => 1,
       'frequency_unit' => 'month',
       'installments' => '',
@@ -451,7 +457,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->paymentProcessor->setDoDirectPaymentResult(['is_error' => 1]);
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'payment_processor_id' => $this->paymentProcessorID,
@@ -466,7 +472,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $lineItem = $this->callAPISuccessGetSingle('line_item', []);
     $this->assertEquals('50.00', $lineItem['unit_price'] * $lineItem['qty']);
     $this->assertEquals('50.00', $lineItem['line_total']);
-    $this->assertEquals(1, $lineItem['financial_type_id']);
+    $this->assertEquals($this->getFinancialTypeID('Donation'), $lineItem['financial_type_id']);
     $financialItem = $this->callAPISuccessGetSingle('financial_item', [
       'civicrm_line_item' => $lineItem['id'],
       'entity_id' => $lineItem['id'],
@@ -482,14 +488,14 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testSubmitCreditCardWithBillingAddress(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->individualCreate(),
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'payment_processor_id' => $this->paymentProcessorID,
       'credit_card_exp_date' => ['M' => 5, 'Y' => date('Y', strtotime('+ 1 year'))],
       'credit_card_number' => '411111111111111',
       'credit_card_type' => 'Visa',
-      'billing_city-5' => 'Vancouver',
+      'billing_city-' . $this->getLocationTypeID('Billing') => 'Vancouver',
     ], NULL, 'live');
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['return' => 'address_id']);
     $this->assertNotEmpty($contribution['address_id']);
@@ -505,10 +511,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * receive date for recurring contribution.
    */
   public function testSubmitCreditCardWithRecur(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $receiveDate = date('Y-m-d H:i:s', strtotime('+1 month'));
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_recur' => 1,
       'frequency_interval' => 2,
       'frequency_unit' => 'month',
@@ -520,7 +527,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'credit_card_exp_date' => ['M' => 5, 'Y' => date('Y', strtotime('+ 1 year'))],
       'credit_card_number' => '411111111111111',
       'credit_card_type' => 'Visa',
-      'billing_city-5' => 'Vancouver',
+      "billing_city-$billingLocationTypeID" => 'Vancouver',
     ], NULL, 'live');
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['return' => 'receive_date']);
     $this->assertEquals($contribution['receive_date'], $receiveDate);
@@ -532,7 +539,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testSubmitCreditCardWithNoBillingAddress(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->individualCreate(),
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'payment_processor_id' => $this->paymentProcessorID,
@@ -544,7 +551,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->assertEmpty($contribution['address_id']);
     $this->callAPISuccessGetCount('Address', [
       'city' => 'Vancouver',
-      'location_type_id' => 5,
+      'location_type_id' => $this->getLocationTypeID('Billing'),
     ], 0);
   }
 
@@ -555,7 +562,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $contactID = $this->individualCreate();
     $form = $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $contactID,
       'is_email_receipt' => TRUE,
       'from_email_address' => 'test@test.com',
@@ -577,7 +584,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->submitContributionForm([
       'contribution_status_id' => 1,
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'is_email_receipt' => TRUE,
       'from_email_address' => $email['id'],
@@ -608,7 +615,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'title' => 'Price Set abc',
       'is_active' => TRUE,
       'financial_type_id:name' => 'Donation',
-      'extends' => 2,
+      'extends:name' => ['CiviContribute'],
       'name' => 'price_set_abc',
     ])['id'];
 
@@ -693,7 +700,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'start_date' => date('Ymd'),
       'amount' => 100.00,
       'pledge_status_id' => '2',
-      'pledge_financial_type_id' => '1',
+      'pledge_financial_type_id' => $this->getFinancialTypeID('Donation'),
       'pledge_original_installment_amount' => 20,
       'frequency_interval' => 5,
       'frequency_unit' => 'year',
@@ -708,7 +715,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     ]);
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -725,7 +732,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testPremiumUpdate(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -751,7 +758,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testPremiumUpdateWithSKUkey(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -777,7 +784,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testPremiumUpdateCreditCard(): void {
     $form = $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -808,7 +815,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $params = $this->pcpParams();
     $pcpID = $this->createPCPBlock($params);
     $this->submitContributionForm([
-      'financial_type_id' => 3,
+      'financial_type_id' => $this->getFinancialTypeID('Campaign Contribution'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
       'contribution_status_id' => 1,
@@ -829,7 +836,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testSubmitWithNote(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->individualCreate([], 'with_note'),
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -848,7 +855,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testSubmitWithNoteCreditCard(): void {
     $this->submitContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -870,7 +877,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testEnterNegativeContribution(): void {
     $this->submitContributionForm([
       'total_amount' => -5,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -897,7 +904,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->setCurrencySeparators($thousandSeparator);
     $this->submitContributionForm([
       'total_amount' => $this->formatMoneyInput(6100.10),
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $contactID,
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -906,7 +913,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->submitContributionForm([
       'total_amount' => $this->formatMoneyInput(5200.20),
       'net_amount' => $this->formatMoneyInput(5200.20),
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $contactID,
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -934,7 +941,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->setCurrencySeparators($thousandSeparator);
     $this->submitContributionForm([
       'total_amount' => 1200.55,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'check_number' => '123AX',
@@ -944,7 +951,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->submitContributionForm([
       'total_amount' => 1200.55,
       'net_amount' => 1200.55,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'card_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Financial_DAO_FinancialTrxn', 'card_type_id', 'Visa'),
@@ -993,14 +1000,15 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * Test the submit function that completes the partially paid payment using Credit Card
    */
   public function testPartialPaymentWithCreditCard(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     // create a partially paid contribution by using back-office form
     $form = $this->getContributionForm([
       'total_amount' => 50,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
       'check_number' => '7890',
-      'billing_city-5' => 'Vancouver',
+      "billing_city-$billingLocationTypeID" => 'Vancouver',
       'contribution_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending'),
     ]);
     $form->postProcess();
@@ -1012,17 +1020,17 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $form = $this->getTestForm('CRM_Contribute_Form_AdditionalPayment', [
       'total_amount' => 40,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'payment_processor_id' => $this->paymentProcessorID,
       'credit_card_exp_date' => ['M' => 5, 'Y' => date('Y', strtotime('+ 1 year'))],
       'credit_card_number' => '411111111111111',
       'cvv2' => 234,
       'credit_card_type' => 'Visa',
-      'billing_city-5' => 'Vancouver',
-      'billing_state_province_id-5' => 1059,
-      'billing_postal_code-5' => 1321312,
-      'billing_country_id-5' => 1228,
+      "billing_city-$billingLocationTypeID" => 'Vancouver',
+      "billing_state_province_id-$billingLocationTypeID" => 1059,
+      "billing_postal_code-$billingLocationTypeID" => 1321312,
+      "billing_country_id-$billingLocationTypeID" => 1228,
       'trxn_date' => '2017-04-11 13:05:11',
     ], ['id' => $contribution['id'], 'mode' => 'live'])->processForm();
     $this->assertEquals($contribution['id'], $form->getContributionID());
@@ -1079,10 +1087,10 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
 
     // CRM-20423: Upon simple submit of 'Edit Contribution' form ensure that total amount is same,
     // given it is being changed to a financial type with the same tax calculation.
-    $this->addTaxAccountToFinancialType(3);
+    $this->addTaxAccountToFinancialType($this->getFinancialTypeID('Campaign Contribution'));
     $this->submitContributionForm([
       'id' => $contribution['id'],
-      'financial_type_id' => 3,
+      'financial_type_id' => $this->getFinancialTypeID('Campaign Contribution'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -1111,7 +1119,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $this->addTaxAccountToFinancialType($this->financialTypeID);
     $this->submitContributionForm([
       'total_amount' => 100,
-      'financial_type_id' => 3,
+      'financial_type_id' => $this->getFinancialTypeID('Campaign Contribution'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
@@ -1166,7 +1174,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     ], $contribution['id']);
     $contribution = $this->callAPISuccessGetSingle('Contribution',
       [
-        'contribution_id' => 1,
+        'id' => $contribution['id'],
         'return' => ['tax_amount', 'total_amount', 'net_amount', 'financial_type_id', 'receive_date', 'payment_instrument_id'],
       ]
     );
@@ -1227,7 +1235,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     ], $contribution['id']);
     $contribution = $this->callAPISuccessGetSingle('Contribution',
       [
-        'contribution_id' => 1,
+        'id' => $contribution['id'],
         'return' => ['tax_amount', 'total_amount', 'net_amount', 'financial_type_id', 'receive_date', 'payment_instrument_id'],
       ]
     );
@@ -1274,11 +1282,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
       'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'contribution_status_id' => 1,
     ]);
-    $contribution = $this->callAPISuccessGetSingle('Contribution',
-      [
-        'contribution_id' => 1,
-      ],
-    );
+    $contribution = $this->callAPISuccessGetSingle('Contribution', []);
     $financialTypeID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_FinancialType', 'Campaign Contribution', 'id', 'name');
     $this->submitContributionForm([
       'id' => $contribution['id'],
@@ -1294,7 +1298,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     ], $contribution['id']);
     $contribution = $this->callAPISuccessGetSingle('Contribution',
       [
-        'contribution_id' => 1,
+        'id' => $contribution['id'],
         'return' => ['tax_amount', 'total_amount', 'net_amount', 'financial_type_id', 'receive_date', 'payment_instrument_id'],
       ]
     );
@@ -1321,7 +1325,6 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     ]);
     $contribution = $this->callAPISuccessGetSingle('Contribution',
       [
-        'contribution_id' => 1,
         'return' => [
           'tax_amount',
           'total_amount',
@@ -1344,7 +1347,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
   public function testCardTypeAndPanTruncation(): void {
     $form = $this->getContributionForm([
       'total_amount' => 100,
-      'financial_type_id' => 3,
+      'financial_type_id' => $this->getFinancialTypeID('Campaign Contribution'),
       'contact_id' => $this->ids['Contact'][0],
       'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
       'contribution_status_id' => 1,
@@ -1378,7 +1381,7 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     // Create contribution page with only pay later enabled.
     $params = [
       'title' => 'Test Contribution Page',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'currency' => 'NZD',
       'goal_amount' => 100,
       'is_pay_later' => 1,
@@ -1409,11 +1412,12 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
    * function to test card_type and pan truncation.
    */
   public function testCardTypeAndPanTruncationLiveMode(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
     $visaID = CRM_Core_PseudoConstant::getKey('CRM_Core_BAO_FinancialTrxn', 'card_type_id', 'Visa');
     $this->submitContributionForm(
       [
         'total_amount' => 50,
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'contact_id' => $this->ids['Contact'][0],
         'credit_card_number' => 4444333322221111,
         'payment_instrument_id' => $this->getPaymentInstrumentID('Credit Card'),
@@ -1426,11 +1430,11 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
         'billing_first_name' => 'Junko',
         'billing_middle_name' => '',
         'billing_last_name' => 'Adams',
-        'billing_street_address-5' => '790L Lincoln St S',
-        'billing_city-5' => 'Maryknoll',
-        'billing_state_province_id-5' => 1031,
-        'billing_postal_code-5' => 10545,
-        'billing_country_id-5' => 1228,
+        "billing_street_address-$billingLocationTypeID" => '790L Lincoln St S',
+        "billing_city-$billingLocationTypeID" => 'Maryknoll',
+        "billing_state_province_id-$billingLocationTypeID" => 1031,
+        "billing_postal_code-$billingLocationTypeID" => 10545,
+        "billing_country_id-$billingLocationTypeID" => 1228,
         'frequency_interval' => 1,
         'frequency_unit' => 'month',
         'installments' => '',
@@ -1908,20 +1912,6 @@ class CRM_Contribute_Form_ContributionTest extends CiviUnitTestCase {
     $form->preProcess();
     $form->buildForm();
     return $form;
-  }
-
-  /**
-   * Get the payment instrument ID.
-   *
-   * Function just exists to avoid line-wrapping hell with the
-   * longer function it calls.
-   *
-   * @param string $name
-   *
-   * @return int
-   */
-  protected function getPaymentInstrumentID(string $name): int {
-    return CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', $name);
   }
 
   /**

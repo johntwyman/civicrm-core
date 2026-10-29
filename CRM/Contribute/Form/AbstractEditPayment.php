@@ -299,9 +299,12 @@ class CRM_Contribute_Form_AbstractEditPayment extends CRM_Contact_Form_Task {
    */
   public function getContactID():?int {
     if ($this->_contactID === NULL) {
-      $this->_contactID = CRM_Utils_Request::retrieve('cid', 'Positive', $this);
-      if (empty($this->_contactID) && !empty($this->_id) && $this->entity) {
-        $this->_contactID = civicrm_api3($this->entity, 'getvalue', ['id' => $this->_id, 'return' => 'contact_id']);
+      $this->_contactID = $this->getSubmittedValue('contact_id');
+      if (!$this->_contactID) {
+        $this->_contactID = CRM_Utils_Request::retrieve('cid', 'Positive', $this);
+        if (empty($this->_contactID) && !empty($this->_id) && $this->entity) {
+          $this->_contactID = civicrm_api3($this->entity, 'getvalue', ['id' => $this->_id, 'return' => 'contact_id']);
+        }
       }
     }
     return $this->_contactID ? (int) $this->_contactID : NULL;
@@ -431,7 +434,7 @@ class CRM_Contribute_Form_AbstractEditPayment extends CRM_Contact_Form_Task {
       'billing_first_name',
       'billing_middle_name',
       'billing_last_name',
-      'street_address-5',
+      "street_address-{$billingLocationTypeID}",
       "city-{$billingLocationTypeID}",
       "state_province_id-{$billingLocationTypeID}",
       "postal_code-{$billingLocationTypeID}",
@@ -554,7 +557,7 @@ class CRM_Contribute_Form_AbstractEditPayment extends CRM_Contact_Form_Task {
    */
   protected function processBillingAddress(int $contactID, string $email): void {
     $submittedValues = $this->getSubmittedValues();
-    $submittedValues['email-5'] = $submittedValues['email-Primary'] = $email;
+    $submittedValues['email-' . CRM_Core_BAO_LocationType::getBilling()] = $submittedValues['email-Primary'] = $email;
 
     [$hasBillingField, $addressParams] = CRM_Contribute_BAO_Contribution::getPaymentProcessorReadyAddressParams($submittedValues);
 

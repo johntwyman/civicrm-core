@@ -76,7 +76,7 @@ class FinancialTypeTest extends BaseTestClass {
     $this->assertCount(4, $types);
     $this->setupLoggedInUserWithLimitedFinancialTypeAccess();
     $type = \CRM_Financial_BAO_FinancialType::getIncomeFinancialType();
-    $this->assertEquals([1 => 'Donation'], $type);
+    $this->assertEquals([$this->getFinancialTypeID('Donation') => 'Donation'], $type);
   }
 
   /**
@@ -88,7 +88,7 @@ class FinancialTypeTest extends BaseTestClass {
     $priceSetID = PriceSet::create()->setValues([
       'title' => 'Price Set Financial ACLS',
       'name' => 'test_price_set',
-      'extends' => 1,
+      'extends:name' => ['CiviEvent'],
       'financial_type_id:name' => 'Donation',
     ])->execute()->first()['id'];
 

@@ -23,9 +23,38 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
    * @dataProvider getMappingMaps
    */
   public function testSaveMappingFields($params, $expected) {
+    // The data provider runs before the relationship and location types exist, so it gives names; look up the ids.
+    foreach ($params['mapper'] as &$mapperFields) {
+      foreach ($mapperFields as &$mapperField) {
+        $locationTypeIndex = 2;
+        if (preg_match('/^(.+)_(a_b|b_a)$/', $mapperField[1] ?? '', $matches)) {
+          $mapperField[1] = $this->getRelationshipTypeID($matches[1]) . '_' . $matches[2];
+          $locationTypeIndex = 3;
+        }
+        if (!empty(trim($mapperField[$locationTypeIndex] ?? '')) && !is_numeric($mapperField[$locationTypeIndex])) {
+          $mapperField[$locationTypeIndex] = (string) $this->getLocationTypeID($mapperField[$locationTypeIndex]);
+        }
+      }
+      unset($mapperField);
+    }
+    unset($mapperFields);
+    foreach ($expected as &$expectedField) {
+      if (isset($expectedField['relationship_type_id'])) {
+        $expectedField['relationship_type_id'] = (string) $this->getRelationshipTypeID($expectedField['relationship_type_id']);
+      }
+      if (isset($expectedField['location_type_id'])) {
+        $expectedField['location_type_id'] = (string) $this->getLocationTypeID($expectedField['location_type_id']);
+      }
+    }
+    unset($expectedField);
     $mapping = $this->callAPISuccess('Mapping', 'create', ['name' => 'teest']);
     CRM_Core_BAO_Mapping::saveMappingFields($params, $mapping['id']);
-    $saved = $this->callAPISuccess('MappingField', 'get', ['mapping_id' => $mapping['id']])['values'];
+    $saved = $this->callAPISuccess('MappingField', 'get', ['mapping_id' => $mapping['id'], 'sequential' => 1])['values'];
+    $expected = array_values($expected);
+    foreach ($expected as $index => $mappingField) {
+      $expected[$index]['id'] = $saved[$index]['id'];
+      $expected[$index]['mapping_id'] = $mapping['id'];
+    }
     $this->assertEquals($expected, $saved);
   }
 
@@ -46,35 +75,31 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
           'mapper' => [
             1 =>
               [
-                ['Individual', '10_b_a', 'id'],
+                ['Individual', 'Supervised by_b_a', 'id'],
                 ['Individual', 'city', ' '],
                 ['Individual', 'contact_sub_type'],
                 ['Student', 'custom_27'],
                 ['Individual', 'current_employer'],
-                ['Individual', 'phone', '1', '2'],
-                ['Individual', 'postal_code', '2'],
-                ['Individual', 'im', '1', '1'],
+                ['Individual', 'phone', 'Home', '2'],
+                ['Individual', 'postal_code', 'Work'],
+                ['Individual', 'im', 'Home', '1'],
                 ['Individual', 'url'],
-                ['Individual', '1_b_a', 'phone', '5', '1'],
+                ['Individual', 'Child of_b_a', 'phone', 'Billing', '1'],
               ],
           ],
         ],
         'expected' => $expected = [
           1 =>
             [
-              'id' => '1',
-              'mapping_id' => '1',
               'name' => 'id',
               'contact_type' => 'Individual',
               'column_number' => '0',
-              'relationship_type_id' => '10',
+              'relationship_type_id' => 'Supervised by',
               'relationship_direction' => 'b_a',
               'grouping' => '1',
             ],
           2 =>
             [
-              'id' => '2',
-              'mapping_id' => '1',
               'name' => 'city',
               'contact_type' => 'Individual',
               'column_number' => '1',
@@ -82,8 +107,6 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
             ],
           3 =>
             [
-              'id' => '3',
-              'mapping_id' => '1',
               'name' => 'contact_sub_type',
               'contact_type' => 'Individual',
               'column_number' => '2',
@@ -91,8 +114,6 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
             ],
           4 =>
             [
-              'id' => '4',
-              'mapping_id' => '1',
               'name' => 'custom_27',
               'contact_type' => 'Student',
               'column_number' => '3',
@@ -100,8 +121,6 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
             ],
           5 =>
             [
-              'id' => '5',
-              'mapping_id' => '1',
               'name' => 'current_employer',
               'contact_type' => 'Individual',
               'column_number' => '4',
@@ -109,40 +128,32 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
             ],
           6 =>
             [
-              'id' => '6',
-              'mapping_id' => '1',
               'name' => 'phone',
               'contact_type' => 'Individual',
               'column_number' => '5',
-              'location_type_id' => '1',
+              'location_type_id' => 'Home',
               'phone_type_id' => '2',
               'grouping' => '1',
             ],
           7 =>
             [
-              'id' => '7',
-              'mapping_id' => '1',
               'name' => 'postal_code',
               'contact_type' => 'Individual',
               'column_number' => '6',
-              'location_type_id' => '2',
+              'location_type_id' => 'Work',
               'grouping' => '1',
             ],
           8 =>
             [
-              'id' => '8',
-              'mapping_id' => '1',
               'name' => 'im',
               'contact_type' => 'Individual',
               'column_number' => '7',
-              'location_type_id' => '1',
+              'location_type_id' => 'Home',
               'im_provider_id' => '1',
               'grouping' => '1',
             ],
           9 =>
             [
-              'id' => '9',
-              'mapping_id' => '1',
               'name' => 'url',
               'contact_type' => 'Individual',
               'column_number' => '8',
@@ -150,14 +161,12 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
             ],
           10 =>
             [
-              'id' => '10',
-              'mapping_id' => '1',
               'name' => 'phone',
               'contact_type' => 'Individual',
               'column_number' => '9',
-              'location_type_id' => '5',
+              'location_type_id' => 'Billing',
               'phone_type_id' => '1',
-              'relationship_type_id' => '1',
+              'relationship_type_id' => 'Child of',
               'relationship_direction' => 'b_a',
               'grouping' => '1',
             ],
@@ -197,8 +206,6 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
         ],
         'expected' => [
           1 => [
-            'id' => '1',
-            'mapping_id' => '1',
             'name' => 'addressee_id',
             'contact_type' => 'Contact',
             'column_number' => '0',
@@ -206,8 +213,6 @@ class CRM_Core_BAO_MappingTest extends CiviUnitTestCase {
             'operator' => 'IS NOT NULL',
           ],
           2 => [
-            'id' => '2',
-            'mapping_id' => '1',
             'name' => 'custom_2',
             'contact_type' => 'Individual',
             'column_number' => '1',

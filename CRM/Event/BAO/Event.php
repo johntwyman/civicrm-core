@@ -1053,7 +1053,7 @@ WHERE civicrm_event.is_active = 1
   /**
    * Send e-mails.
    *
-   * @param int $contactID
+   * @param null $unused
    * @param array $values
    * @param int $participantId
    * @param bool $isTest
@@ -1062,20 +1062,37 @@ WHERE civicrm_event.is_active = 1
    * @return array|null
    * @throws \CRM_Core_Exception
    */
-  public static function sendMail($contactID, $values, $participantId, $isTest = FALSE, $returnMessageText = FALSE) {
+  public static function sendMail($unused, $values, $participantId, $isTest = FALSE, $returnMessageText = FALSE) {
 
     $template = CRM_Core_Smarty::singleton();
-    $gIds = [
-      'custom_pre_id' => $values['custom_pre_id'],
-      'custom_post_id' => $values['custom_post_id'],
-    ];
+    $eventID = \Civi\Api4\Participant::get(FALSE)
+      ->addWhere('id', '=', $participantId)
+      ->execute()->first()['event_id'];
+
+    //to change the status pending to completed
+    $additional = new CRM_Event_DAO_Participant();
+    $additional->id = $participantId;
+    $additional->find(TRUE);
+    $contactID = (int) $additional->contact_id;
 
     //get the params submitted by participant.
     $participantParams = $values['params'][$participantId] ?? [];
+    $eventParams = ['id' => $eventID];
+    $eventValues = [];
+    CRM_Event_BAO_Event::commonRetrieve('CRM_Event_BAO_Event', $eventParams, $eventValues);
 
     if (!$returnMessageText) {
+      $gIds = [];
+      $ufJoinParams = [
+        'entity_table' => 'civicrm_event',
+        'entity_id' => $eventID,
+        'module' => 'CiviEvent',
+      ];
+
+      [$gIds['custom_pre_id'], $gIds['custom_post_ids']] = CRM_Core_BAO_UFJoin::getUFGroupIds($ufJoinParams);
+
       //send notification email if field values are set (CRM-1941)
-      foreach ($gIds as $key => $gIdValues) {
+      foreach ($gIds as $gIdValues) {
         if ($gIdValues) {
           if (!is_array($gIdValues)) {
             $gIdValues = [$gIdValues];
@@ -1107,20 +1124,30 @@ WHERE civicrm_event.is_active = 1
       }
     }
 
-    if ($values['event']['is_email_confirm'] || $returnMessageText) {
+    if ($eventValues['is_email_confirm'] || $returnMessageText) {
+      $contributionID = NULL;
+      if (array_key_exists('Contribution', \Civi::service('action_object_provider')->getEntities())) {
+        $contributionID = \Civi\Api4\LineItem::get(FALSE)
+          ->addWhere('entity_table', '=', 'civicrm_participant')
+          ->addWhere('entity_id', '=', $participantId)
+          ->addSelect('contribution_id')
+          ->execute()->first()['contribution_id'] ?? NULL;
+      }
       [$displayName, $email] = CRM_Contact_BAO_Contact_Location::getEmailDetails($contactID);
       $notifyEmail = CRM_Utils_Array::valueByRegexKey('/^email-/', $participantParams) ?? $email;
       //send email only when email is present
       if (isset($notifyEmail) || $returnMessageText) {
-        $tplParams = array_merge($values, $participantParams, [
+        $tplParams = [
           'email' => $notifyEmail,
-          'confirm_email_text' => $values['event']['confirm_email_text'] ?? NULL,
-          'isShowLocation' => $values['event']['is_show_location'] ?? NULL,
+          'confirm_email_text' => $eventValues['confirm_email_text'] ?? NULL,
+          'isShowLocation' => $eventValues['is_show_location'] ?? NULL,
           'credit_card_number' => CRM_Utils_System::mungeCreditCard($participantParams['credit_card_number'] ?? NULL),
           'credit_card_exp_date' => CRM_Utils_Date::mysqlToIso(CRM_Utils_Date::format($participantParams['credit_card_exp_date'] ?? NULL)),
-          'selfcancelxfer_time' => abs($values['event']['selfcancelxfer_time']),
-          'selfservice_preposition' => $values['event']['selfcancelxfer_time'] < 0 ? ts('after') : ts('before'),
-        ]);
+          'credit_card_type' => $participantParams['credit_card_type'] ?? NULL,
+          'currency' => $values['currency'] ?? NULL,
+          'selfcancelxfer_time' => abs($eventValues['selfcancelxfer_time']),
+          'selfservice_preposition' => $eventValues['selfcancelxfer_time'] < 0 ? ts('after') : ts('before'),
+        ];
 
         $sendTemplateParams = [
           'workflow' => 'event_online_receipt',
@@ -1129,8 +1156,9 @@ WHERE civicrm_event.is_active = 1
           'PDFFilename' => ts('confirmation') . '.pdf',
           'modelProps' => [
             'participantID' => (int) $participantId,
-            'eventID' => (int) $values['event']['id'],
+            'eventID' => (int) $eventID,
             'contactID' => (int) $contactID,
+            'contributionID' => (int) $contributionID,
             'note' => $participantParams['note'] ?? '',
           ],
         ];
@@ -1145,16 +1173,15 @@ WHERE civicrm_event.is_active = 1
           ];
         }
         else {
-          $sendTemplateParams['from'] = ($values['event']['confirm_from_name'] ?? '') . " <" . ($values['event']['confirm_from_email'] ?? '') . ">";
+          $sendTemplateParams['from'] = ($eventValues['confirm_from_name'] ?? '') . " <" . ($eventValues['confirm_from_email'] ?? '') . ">";
           $sendTemplateParams['toName'] = $displayName;
           $sendTemplateParams['toEmail'] = $notifyEmail;
           $sendTemplateParams['autoSubmitted'] = TRUE;
-          $sendTemplateParams['cc'] = $values['event']['cc_confirm'] ?? NULL;
-          $sendTemplateParams['bcc'] = $values['event']['bcc_confirm'] ?? NULL;
+          $sendTemplateParams['cc'] = $eventValues['cc_confirm'] ?? NULL;
+          $sendTemplateParams['bcc'] = $eventValues['bcc_confirm'] ?? NULL;
 
-          if (Civi::settings()->get('invoice_is_email_pdf') && !empty($values['contributionId'])) {
+          if (Civi::settings()->get('invoice_is_email_pdf') && $contributionID) {
             $sendTemplateParams['isEmailPdf'] = TRUE;
-            $sendTemplateParams['modelProps']['contributionID'] = $values['contributionId'];
           }
           CRM_Core_BAO_MessageTemplate::sendTemplate($sendTemplateParams);
         }
@@ -1504,45 +1531,24 @@ WHERE  id = $cfID
    *   Id of Primary participant.
    * @param array $values
    *   Key/value event info.
-   * @param int $contactId
-   *   Contact id of Primary participant.
-   * @param bool $isTest
-   *   Whether test or live transaction.
-   * @param bool $isIdsArray
-   *   To return an array of Ids.
-   *
-   * @param bool $skipCancel
    *
    * @return array
    *   array of Additional participant's info OR array of Ids.
+   * @throws \CRM_Core_Exception
+   * @throws \Civi\Core\Exception\DBQueryException
    */
-  public static function buildCustomProfile(
-    $participantId,
-    $values,
-    $contactId = NULL,
-    $isTest = FALSE,
-    $isIdsArray = FALSE,
-    $skipCancel = TRUE
-  ) {
+  public static function buildCustomProfile($participantId, $values) {
 
     $customProfile = $additionalIDs = [];
     if (!$participantId) {
       throw new CRM_Core_Exception(ts('Cannot find participant ID'));
     }
 
-    //set Ids of Primary Participant also.
-    if ($isIdsArray && $contactId) {
-      $additionalIDs[$participantId] = $contactId;
-    }
-
     //hack to skip cancelled participants, CRM-4320
     $where = "participant.registered_by_id={$participantId}";
-    if ($skipCancel) {
-      $cancelStatusId = 0;
-      $negativeStatuses = CRM_Event_PseudoConstant::participantStatus(NULL, "class = 'Negative'");
-      $cancelStatusId = array_search('Cancelled', $negativeStatuses);
-      $where .= " AND participant.status_id != {$cancelStatusId}";
-    }
+    $negativeStatuses = CRM_Event_PseudoConstant::participantStatus(NULL, "class = 'Negative'");
+    $cancelStatusId = array_search('Cancelled', $negativeStatuses);
+    $where .= " AND participant.status_id != {$cancelStatusId}";
     $query = "
   SELECT  participant.id, participant.contact_id
     FROM  civicrm_participant participant
@@ -1551,11 +1557,6 @@ WHERE  id = $cfID
     $dao = CRM_Core_DAO::executeQuery($query);
     while ($dao->fetch()) {
       $additionalIDs[$dao->id] = $dao->contact_id;
-    }
-
-    //return if only array is required.
-    if ($isIdsArray && $contactId) {
-      return $additionalIDs;
     }
 
     $preProfileID = $values['additional_custom_pre_id'] ?? NULL;
@@ -1575,7 +1576,7 @@ WHERE  id = $cfID
             $participantParams = $values['params'][$pId] ?? [];
           }
 
-          [$profilePre, $groupTitles] = self::buildCustomDisplay($preProfileID,
+          [$profilePre, $groupTitles] = CRM_Event_BAO_Event::buildCustomDisplay($preProfileID,
             'additionalCustomPre',
             $cId,
             $template,
@@ -1593,7 +1594,7 @@ WHERE  id = $cfID
             }
           }
 
-          [$profilePost, $groupTitles] = self::buildCustomDisplay($postProfileID,
+          [$profilePost, $groupTitles] = CRM_Event_BAO_Event::buildCustomDisplay($postProfileID,
             'additionalCustomPost',
             $cId,
             $template,

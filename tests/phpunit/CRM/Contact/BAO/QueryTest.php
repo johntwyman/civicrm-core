@@ -202,8 +202,8 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testSearch(array $formValues, array $ids): void {
-    $this->callAPISuccess('SavedSearch', 'create', ['form_values' => 'a:9:{s:5:"qfKey";s:32:"0123456789abcdef0123456789abcdef";s:13:"includeGroups";a:1:{i:0;s:1:"3";}s:13:"excludeGroups";a:0:{}s:11:"includeTags";a:0:{}s:11:"excludeTags";a:0:{}s:4:"task";s:2:"14";s:8:"radio_ts";s:6:"ts_all";s:14:"customSearchID";s:1:"4";s:17:"customSearchClass";s:36:"CRM_Contact_Form_Search_Custom_Group";}']);
-    $this->callAPISuccess('SavedSearch', 'create', ['form_values' => 'a:9:{s:5:"qfKey";s:32:"0123456789abcdef0123456789abcdef";s:13:"includeGroups";a:1:{i:0;s:1:"3";}s:13:"excludeGroups";a:0:{}s:11:"includeTags";a:0:{}s:11:"excludeTags";a:0:{}s:4:"task";s:2:"14";s:8:"radio_ts";s:6:"ts_all";s:14:"customSearchID";s:1:"4";s:17:"customSearchClass";s:36:"CRM_Contact_Form_Search_Custom_Group";}']);
+    $savedSearch4 = $this->callAPISuccess('SavedSearch', 'create', ['form_values' => 'a:9:{s:5:"qfKey";s:32:"0123456789abcdef0123456789abcdef";s:13:"includeGroups";a:1:{i:0;s:1:"3";}s:13:"excludeGroups";a:0:{}s:11:"includeTags";a:0:{}s:11:"excludeTags";a:0:{}s:4:"task";s:2:"14";s:8:"radio_ts";s:6:"ts_all";s:14:"customSearchID";s:1:"4";s:17:"customSearchClass";s:36:"CRM_Contact_Form_Search_Custom_Group";}'])['id'];
+    $savedSearch6 = $this->callAPISuccess('SavedSearch', 'create', ['form_values' => 'a:9:{s:5:"qfKey";s:32:"0123456789abcdef0123456789abcdef";s:13:"includeGroups";a:1:{i:0;s:1:"3";}s:13:"excludeGroups";a:0:{}s:11:"includeTags";a:0:{}s:11:"excludeTags";a:0:{}s:4:"task";s:2:"14";s:8:"radio_ts";s:6:"ts_all";s:14:"customSearchID";s:1:"4";s:17:"customSearchClass";s:36:"CRM_Contact_Form_Search_Custom_Group";}'])['id'];
 
     $tag7 = $this->ids['Tag'][7] = $this->tagCreate(['name' => 'Test Tag 7', 'description' => 'Test Tag 7'])['id'];
     $tag9 = $this->ids['Tag'][9] = $this->tagCreate(['name' => 'Test Tag 9', 'description' => 'Test Tag 9'])['id'];
@@ -212,9 +212,9 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
 
     $groups = [
       3 => ['name' => 'Test Group 3'],
-      4 => ['name' => 'Test Smart Group 4', 'saved_search_id' => 1],
+      4 => ['name' => 'Test Smart Group 4', 'saved_search_id' => $savedSearch4],
       5 => ['name' => 'Test Group 5'],
-      6 => ['name' => 'Test Smart Group 6', 'saved_search_id' => 2],
+      6 => ['name' => 'Test Smart Group 6', 'saved_search_id' => $savedSearch6],
     ];
 
     foreach ($groups as $id => $group) {
@@ -347,6 +347,67 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
   }
 
   /**
+   * A quote in a value that ends up in an RLIKE clause must not break out of the string literal.
+   */
+  public function testRegexValueIsEscaped(): void {
+    $phoneContactID = $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Anna', 'last_name' => 'Regex', 'preferred_communication_method' => [1]], 'phone')['id'];
+    $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Ben', 'last_name' => 'Regex', 'preferred_communication_method' => [2]], 'email');
+    $injection = "1' OR 1 OR '";
+
+    $this->callAPISuccessGetCount('Contact', ['last_name' => 'Regex', 'preferred_communication_method' => 1], 1);
+    $this->callAPISuccessGetCount('Contact', ['last_name' => 'Regex', 'preferred_communication_method' => $injection], 0);
+
+    $this->assertSame([$phoneContactID], $this->getContactIDsForQuery([['first_name', 'RLIKE', '^An', 0, 0]]));
+    $this->assertSame([], $this->getContactIDsForQuery([['first_name', 'RLIKE', $injection, 0, 0]]));
+  }
+
+  private function getContactIDsForQuery(array $params): array {
+    $dao = (new CRM_Contact_BAO_Query($params))->searchQuery();
+    $contactIDs = [];
+    while ($dao->fetch()) {
+      $contactIDs[] = (int) $dao->contact_id;
+    }
+    return $contactIDs;
+  }
+
+  /**
+   * Show the severity of the unescaped RLIKE sink and that the fix closes it.
+   *
+   * The payload's result is decided solely by a sub-query against a different
+   * table (civicrm_email), proving that an attacker could run arbitrary SQL and
+   * read data the contact query never touches. The real buildClause() must treat
+   * the same payload as a literal regex, so it matches nothing.
+   */
+  public function testRegexInjectionCannotRunCrossTableSubquery(): void {
+    $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Carla', 'last_name' => 'Subquery'], 'with_email');
+    $this->callAPISuccess('Email', 'create', ['contact_id' => $this->ids['Contact']['with_email'], 'email' => 'injection-probe@example.org']);
+    $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Dan', 'last_name' => 'Subquery'], 'no_email');
+
+    $totalContacts = (int) CRM_Core_DAO::singleValueQuery('SELECT COUNT(*) FROM civicrm_contact');
+
+    // A value that never matches a first name on its own, closed off so the
+    // trailing quote from the clause is commented out. The result hangs on
+    // whether the sub-query against civicrm_email finds the probe address.
+    $payload = static fn(string $comparison): string =>
+      "zzz' OR (SELECT COUNT(id) FROM civicrm_email WHERE email = 'injection-probe@example.org') = $comparison -- ";
+
+    // The vulnerable pattern: the value dropped into the clause with no escaping,
+    // exactly as the pre-fix buildClause() did. Built here so core stays fixed.
+    $runVulnerable = static fn(string $value): int => (int) CRM_Core_DAO::singleValueQuery(
+      "SELECT COUNT(*) FROM civicrm_contact contact_a WHERE CAST(contact_a.first_name AS BINARY) RLIKE BINARY '$value'"
+    );
+
+    // Sub-query true (one probe row) selects every contact; false selects none.
+    // The gap is controlled entirely by the read of the other table.
+    $this->assertSame($totalContacts, $runVulnerable($payload('1')));
+    $this->assertSame(0, $runVulnerable($payload('999')));
+
+    // The fixed clause escapes the value, so the same payload is a literal regex
+    // that no first name matches and no sub-query runs.
+    $this->assertSame([], $this->getContactIDsForQuery([['first_name', 'RLIKE', $payload('1'), 0, 0]]));
+  }
+
+  /**
    * Check that we get a successful result querying for home address.
    * CRM-14263 search builder failure with search profile & address in criteria
    *
@@ -358,11 +419,11 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     $this->callAPISuccess('address', 'create', [
       'contact_id' => $contactID,
       'city' => 'Cool City',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
     $params = [
       0 => [
-        0 => 'city-1',
+        0 => 'city-' . $this->getLocationTypeID('Home'),
         1 => '=',
         2 => 'Cool City',
         3 => 1,
@@ -414,7 +475,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
       'field_name' => 'phone',
       'is_required' => FALSE,
       'visibility' => 'Public Pages and Listings',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'phone_type_id' => 1,
       'label' => 'Phone-Phone (Primary)',
       'field_type' => 'Contact',
@@ -497,11 +558,11 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     $this->callAPISuccess('address', 'create', [
       'contact_id' => $contactID,
       'city' => 'Cool City',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
     $params = [
       0 => [
-        0 => 'city-1',
+        0 => 'city-' . $this->getLocationTypeID('Home'),
         1 => '=',
         2 => 'Dumb City',
         3 => 1,
@@ -591,7 +652,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
 
     $params = [
       0 => [
-        0 => 'state_province-4',
+        0 => 'state_province-' . $this->getLocationTypeID('Other'),
         1 => 'IS NOT EMPTY',
         2 => '',
         3 => 1,
@@ -604,7 +665,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
       'sort_name' => 1,
       'location' => [
         'other' => [
-          'location_type' => 4,
+          'location_type' => $this->getLocationTypeID('Other'),
           'state_province' => 1,
         ],
       ],
@@ -614,7 +675,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     // the display_name. Plain SQL however does the job
     CRM_Core_DAO::executeQuery('update civicrm_location_type set name=%2 where id=%1',
       [
-        1 => [4, 'Integer'],
+        1 => [$this->getLocationTypeID('Other'), 'Integer'],
         2 => ['other', 'String'],
       ]);
 
@@ -645,7 +706,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
       'contact_id' => $contactID,
       'city' => 'Cool CITY',
       'street_address' => 'Long STREET',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
     $returnProperties = [
       'contact_type' => 1,
@@ -914,7 +975,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     $this->callAPISuccess('Relationship', 'create', [
       'contact_id_a' => $contactID_a,
       'contact_id_b' => $contactID_b,
-      'relationship_type_id' => 1,
+      'relationship_type_id' => $this->getRelationshipTypeID('Child of'),
       'is_active' => 1,
     ]);
     // Create a group and add contact A to it.
@@ -931,7 +992,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
         1 => 'IN',
         2 =>
           [
-            0 => '1_b_a',
+            0 => $this->getRelationshipTypeID('Child of') . '_b_a',
           ],
         3 => 0,
         4 => 0,
@@ -971,7 +1032,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     $relationship = $this->callAPISuccess('Relationship', 'create', [
       'contact_id_a' => $contactID_a,
       'contact_id_b' => $contactID_b,
-      'relationship_type_id' => 2,
+      'relationship_type_id' => $this->getRelationshipTypeID('Spouse of'),
       'is_active' => 1,
       "custom_{$customFieldId}" => 'testvalue',
     ]);
@@ -981,7 +1042,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
         1 => 'IN',
         2 =>
           [
-            0 => '2_a_b',
+            0 => $this->getRelationshipTypeID('Spouse of') . '_a_b',
           ],
         3 => 0,
         4 => 0,
@@ -1002,7 +1063,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     $this->callAPISuccess('Contact', 'delete', ['id' => $contactID_a, 'skip_undelete' => 1]);
     $this->callAPISuccess('Contact', 'delete', ['id' => $contactID_b, 'skip_undelete' => 1]);
     $this->callAPISuccess('CustomField', 'delete', ['id' => $customFieldId, 'skip_undelete' => 1]);
-    $this->callAPISuccess('CustomGroup', 'delete', ['id' => $customGroup]);
+    $this->callAPISuccess('CustomGroup', 'delete', ['id' => $customGroup['id']]);
   }
 
   /**
@@ -1014,7 +1075,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
     $this->callAPISuccess('Relationship', 'create', [
       'contact_id_a' => $contactID_a,
       'contact_id_b' => $contactID_b,
-      'relationship_type_id' => 2,
+      'relationship_type_id' => $this->getRelationshipTypeID('Spouse of'),
       'is_active' => 1,
     ]);
     // Create a group and add contact A to it.
@@ -1031,7 +1092,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
         1 => 'IN',
         2 =>
           [
-            0 => '2_a_b',
+            0 => $this->getRelationshipTypeID('Spouse of') . '_a_b',
           ],
         3 => 0,
         4 => 0,
@@ -1068,7 +1129,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
         1 => 'IN',
         2 =>
           [
-            0 => '2_a_b',
+            0 => $this->getRelationshipTypeID('Spouse of') . '_a_b',
           ],
         3 => 0,
         4 => 0,
@@ -1094,7 +1155,7 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testRelationshipPermissionClause(): void {
-    $params = [['relation_type_id', 'IN', ['1_b_a'], 0, 0], ['relation_permission', 'IN', [2], 0, 0]];
+    $params = [['relation_type_id', 'IN', [$this->getRelationshipTypeID('Child of') . '_b_a'], 0, 0], ['relation_permission', 'IN', [2], 0, 0]];
     $sql = CRM_Contact_BAO_Query::getQuery($params);
     $this->assertStringContainsString('(civicrm_relationship.is_permission_a_b IN (2))', $sql);
   }
@@ -1106,20 +1167,22 @@ class CRM_Contact_BAO_QueryTest extends CiviUnitTestCase {
    */
   public function testRelationshipClause(): void {
     $today = date('Ymd');
+    $householdMemberOf = $this->getRelationshipTypeID('Household Member of');
+    $supervisedBy = $this->getRelationshipTypeID('Supervised by');
     $from1 = ' FROM civicrm_contact contact_a LEFT JOIN civicrm_relationship ON (civicrm_relationship.contact_id_a = contact_a.id ) LEFT JOIN civicrm_contact contact_b ON (civicrm_relationship.contact_id_b = contact_b.id )';
     $from2 = ' FROM civicrm_contact contact_a LEFT JOIN civicrm_relationship ON (civicrm_relationship.contact_id_b = contact_a.id ) LEFT JOIN civicrm_contact contact_b ON (civicrm_relationship.contact_id_a = contact_b.id )';
     $where1 = "WHERE  ( (
 civicrm_relationship.is_active = 1 AND
 ( civicrm_relationship.end_date IS NULL OR civicrm_relationship.end_date >= {$today} ) AND
 ( civicrm_relationship.start_date IS NULL OR civicrm_relationship.start_date <= {$today} )
-) AND (contact_b.is_deleted = 0) AND civicrm_relationship.relationship_type_id IN (8) )  AND (contact_a.is_deleted = 0)";
+) AND (contact_b.is_deleted = 0) AND civicrm_relationship.relationship_type_id IN ({$householdMemberOf}) )  AND (contact_a.is_deleted = 0)";
     $where2 = "WHERE  ( (
 civicrm_relationship.is_active = 1 AND
 ( civicrm_relationship.end_date IS NULL OR civicrm_relationship.end_date >= {$today} ) AND
 ( civicrm_relationship.start_date IS NULL OR civicrm_relationship.start_date <= {$today} )
-) AND (contact_b.is_deleted = 0) AND civicrm_relationship.relationship_type_id IN (8,10) )  AND (contact_a.is_deleted = 0)";
+) AND (contact_b.is_deleted = 0) AND civicrm_relationship.relationship_type_id IN ({$householdMemberOf},{$supervisedBy}) )  AND (contact_a.is_deleted = 0)";
     // Test Traditional single select format
-    $params1 = [['relation_type_id', '=', '8_a_b', 0, 0]];
+    $params1 = [['relation_type_id', '=', $householdMemberOf . '_a_b', 0, 0]];
     $query1 = new CRM_Contact_BAO_Query(
       $params1, ['contact_id'],
       NULL, TRUE, FALSE, 1,
@@ -1130,7 +1193,7 @@ civicrm_relationship.is_active = 1 AND
     $this->assertLike($from1, $sql1[1]);
     $this->assertLike($where1, $sql1[2]);
     // Test single relationship type selected in multiple select.
-    $params2 = [['relation_type_id', 'IN', ['8_a_b'], 0, 0]];
+    $params2 = [['relation_type_id', 'IN', [$householdMemberOf . '_a_b'], 0, 0]];
     $query2 = new CRM_Contact_BAO_Query(
       $params2, ['contact_id'],
       NULL, TRUE, FALSE, 1,
@@ -1141,7 +1204,7 @@ civicrm_relationship.is_active = 1 AND
     $this->assertLike($from1, $sql2[1]);
     $this->assertLike($where1, $sql2[2]);
     // Test multiple relationship types selected.
-    $params3 = [['relation_type_id', 'IN', ['8_a_b', '10_a_b'], 0, 0]];
+    $params3 = [['relation_type_id', 'IN', [$householdMemberOf . '_a_b', $supervisedBy . '_a_b'], 0, 0]];
     $query3 = new CRM_Contact_BAO_Query(
       $params3, ['contact_id'],
       NULL, TRUE, FALSE, 1,
@@ -1152,7 +1215,7 @@ civicrm_relationship.is_active = 1 AND
     $this->assertLike($from1, $sql3[1]);
     $this->assertLike($where2, $sql3[2]);
     // Test Multiple Relationship type selected where one doesn't actually exist.
-    $params4 = [['relation_type_id', 'IN', ['8_a_b', '10_a_b', '14_a_b'], 0, 0]];
+    $params4 = [['relation_type_id', 'IN', [$householdMemberOf . '_a_b', $supervisedBy . '_a_b', '14_a_b'], 0, 0]];
     $query4 = new CRM_Contact_BAO_Query(
       $params4, ['contact_id'],
       NULL, TRUE, FALSE, 1,
@@ -1164,7 +1227,7 @@ civicrm_relationship.is_active = 1 AND
     $this->assertLike($where2, $sql4[2]);
 
     // Test Multiple b to a Relationship type  .
-    $params5 = [['relation_type_id', 'IN', ['8_b_a', '10_b_a', '14_b_a'], 0, 0]];
+    $params5 = [['relation_type_id', 'IN', [$householdMemberOf . '_b_a', $supervisedBy . '_b_a', '14_b_a'], 0, 0]];
     $query5 = new CRM_Contact_BAO_Query(
       $params5, ['contact_id'],
       NULL, TRUE, FALSE, 1,

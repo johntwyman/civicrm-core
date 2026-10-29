@@ -171,6 +171,7 @@ class CRM_Case_BAO_Case extends CRM_Case_DAO_Case implements EventSubscriberInte
       foreach ((array) $caseIds as $caseId) {
         $action->addRecord(['case_id' => $caseId]);
       }
+      $action->setMatch(['case_id', 'activity_id']);
     }
 
     $action->execute();
@@ -604,6 +605,10 @@ HERESQL;
     if (!empty($params['sortBy'])) {
       if (str_contains($params['sortBy'], 'date ')) {
         $params['sortBy'] = str_replace('date', 'activity_date_time', $params['sortBy']);
+      }
+      // 'subject' is ambiguous when civicrm_activity is joined (type 'any'), so sort by the case subject alias.
+      if (str_starts_with($params['sortBy'], 'subject ')) {
+        $params['sortBy'] = 'case_subject' . substr($params['sortBy'], strlen('subject'));
       }
       $order = "ORDER BY " . CRM_Utils_Type::escape($params['sortBy'], 'MysqlOrderBy');
     }

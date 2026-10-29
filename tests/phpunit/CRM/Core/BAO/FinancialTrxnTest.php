@@ -29,14 +29,14 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
    */
   public function testCreate(): void {
     $contactId = $this->individualCreate();
-    $financialTypeId = 1;
+    $financialTypeId = $this->getFinancialTypeID('Donation');
     $contributionID = $this->contributionCreate([
       'contact_id' => $contactId,
       'financial_type_id' => $financialTypeId,
     ]);
     $params = [
       'contribution_id' => $contributionID,
-      'to_financial_account_id' => 1,
+      'to_financial_account_id' => $this->getFinancialAccountID('Donation'),
       'trxn_date' => 20091021184930,
       'trxn_type' => 'Debit',
       'total_amount' => 10,
@@ -66,7 +66,7 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $contactId,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 2,
       'payment_instrument_id' => 1,
       'source' => 'STUDENT',
@@ -130,7 +130,7 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
       'contact_id' => $this->individualCreate(),
       'receive_date' => '2016-01-20',
       'total_amount' => 622,
-      'financial_type_id' => 4,
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'contribution_status_id' => 'Pending',
       'api.Payment.create' => ['total_amount' => 622, 'trxn_date' => '2016-01-20'],
     ];
@@ -158,7 +158,7 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
       'contact_id' => $this->individualCreate(),
       'receive_date' => '2016-01-20',
       'total_amount' => 100,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $contribution = $this->callAPISuccess('Contribution', 'create', $params);
     $lastFinancialTrxnId = CRM_Core_BAO_FinancialTrxn::getFinancialTrxnId($contribution['id'], 'DESC');
@@ -199,7 +199,7 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
       'contact_id' => $cid,
       'receive_date' => '2016-01-20',
       'total_amount' => 100,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
     ];
     $contribution = $this->callAPISuccess('Contribution', 'create', $params);
     $lastFinancialTrxnId = CRM_Core_BAO_FinancialTrxn::getFinancialTrxnId($contribution['id'], 'DESC');
@@ -235,7 +235,7 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
     $params = [
       'contact_id' => $contactId,
       'currency' => 'USD',
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => 'Pending',
       'payment_instrument_id' => 4,
       'total_amount' => 300.00,
@@ -291,7 +291,7 @@ class CRM_Core_BAO_FinancialTrxnTest extends CiviUnitTestCase {
     $cParams = [
       'contact_id' => $contactId,
       'total_amount' => $price,
-      'financial_type_id' => 1,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'is_active' => 1,
       'payment_instrument_id' => 'Credit Card',
       'fee_amount' => 3,

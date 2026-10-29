@@ -34,6 +34,8 @@ use Civi\Api4\Participant;
  */
 class PseudoconstantTest extends Api4TestBase {
 
+  protected ?array $enableComponents = ['*'];
+
   public function testOptionValue(): void {
     $cid = $this->createTestRecord('Contact', ['first_name', 'bill'])['id'];
     $subject = uniqid('subject');
@@ -424,9 +426,6 @@ class PseudoconstantTest extends Api4TestBase {
   }
 
   public function testPreloadFalse(): void {
-    \CRM_Core_BAO_ConfigSetting::enableComponent('CiviContribute');
-    \CRM_Core_BAO_ConfigSetting::enableComponent('CiviCampaign');
-
     $contact = $this->createTestRecord('Contact');
 
     $campaignTitle = uniqid('Test ');
@@ -439,7 +438,7 @@ class PseudoconstantTest extends Api4TestBase {
     $contributionId = $this->createTestRecord('Contribution', [
       'campaign_id' => $campaignId,
       'contact_id' => $contact['id'],
-      'financial_type_id' => 1,
+      'financial_type_id:name' => 'Donation',
       'total_amount' => .01,
     ])['id'];
 

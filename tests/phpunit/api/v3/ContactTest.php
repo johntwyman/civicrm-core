@@ -50,7 +50,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
 
   protected $_contactID;
 
-  protected $_financialTypeId = 1;
+  protected $_financialTypeId;
 
   /**
    * Entity to be extended.
@@ -69,6 +69,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     // Connect to the database.
     parent::setUp();
     $this->_entity = 'contact';
+    $this->_financialTypeId = $this->getFinancialTypeID('Donation');
     $this->_params = [
       'first_name' => 'abc1',
       'contact_type' => 'Individual',
@@ -82,6 +83,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
    * @throws \Exception
    */
   public function tearDown(): void {
+    $this->relabelCustomizedEmailGreeting('Customized');
     $this->_apiversion = 3;
     $this->callAPISuccess('Setting', 'create', ['includeOrderByClause' => TRUE]);
     // truncate a few tables
@@ -378,12 +380,12 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $params = [
       'email' => $primaryEmail,
       'contact_type' => 'Individual',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ];
 
     $contact1 = $this->callAPISuccess('contact', 'create', $params);
 
-    $this->assertEquals(3, $contact1['id']);
+    $this->assertNotEmpty($contact1['id']);
     $email1 = $this->callAPISuccess('email', 'get', ['contact_id' => $contact1['id']]);
     $this->assertEquals(1, $email1['count']);
     $this->assertEquals($primaryEmail, $email1['values'][$email1['id']]['email']);
@@ -1182,8 +1184,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
         [
           'contact_id_a' => '$value.id',
           'contact_id_b' => $create_result_1['id'],
-          // spouse of:
-          'relationship_type_id' => 2,
+          'relationship_type_id' => $this->getRelationshipTypeID('Spouse of'),
           'start_date' => '2005-01-12',
           'end_date' => '2006-01-11',
           'description' => 'old',
@@ -1192,7 +1193,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
           'contact_id_a' => '$value.id',
           'contact_id_b' => $create_result_1['id'],
           // spouse of (was married twice :))
-          'relationship_type_id' => 2,
+          'relationship_type_id' => $this->getRelationshipTypeID('Spouse of'),
           'start_date' => '2006-07-01',
           'end_date' => '2010-07-01',
           'description' => 'new',
@@ -1419,7 +1420,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $params = [
       'email' => 'man2@yahoo.com',
       'contact_type' => 'Individual',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'api.group_contact.create' => ['group_id' => $groupId],
     ];
 
@@ -1587,8 +1588,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
         [
           'contact_id_a' => '$value.id',
           'contact_id_b' => $create_result_1['id'],
-          // child of
-          'relationship_type_id' => 1,
+          'relationship_type_id' => $this->getRelationshipTypeID('Child of'),
         ],
       ],
     ];
@@ -1603,8 +1603,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
         [
           'contact_id_a' => '$value.id',
           'contact_id_b' => $create_result_2['id'],
-          // child of
-          'relationship_type_id' => 1,
+          'relationship_type_id' => $this->getRelationshipTypeID('Child of'),
         ],
       ],
     ];
@@ -1616,7 +1615,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'id' => $create_result_2['id'],
       'api.relationship.get' => [
         'contact_id_b' => '$value.id',
-        'relationship_type_id' => 1,
+        'relationship_type_id' => $this->getRelationshipTypeID('Child of'),
       ],
     ];
     $get_result = $this->callAPISuccess('contact', 'getsingle', $get_params);
@@ -1728,7 +1727,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'last_name' => 'xyz4',
       'email' => 'man4@yahoo.com',
       'contact_type' => 'Individual',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ];
     $result = $this->callAPISuccess('contact', 'create', $params);
 
@@ -1937,7 +1936,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
           ],
           'address' => [
             [
-              'location_type_id' => '1',
+              'location_type_id' => $this->getLocationTypeID('Home'),
               'title' => 'Address 1 (Home)',
               'street_address' => [
                 $contact1 => 'big house',
@@ -1949,7 +1948,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
               ],
             ],
             [
-              'location_type_id' => '2',
+              'location_type_id' => $this->getLocationTypeID('Work'),
               'street_address' => [
                 $contact1 => 'big office',
                 $contact2 => 'medium office',
@@ -1963,7 +1962,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
           ],
           'email' => [
             [
-              'location_type_id' => '1',
+              'location_type_id' => $this->getLocationTypeID('Home'),
               'email' => [
                 $contact1 => 'bob@example.com',
                 $contact2 => 'anthony_anderson@civicrm.org',
@@ -2003,7 +2002,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'contact' => [
         'external_identifier' => 'uniquer and specialler',
         'first_name' => 'different',
-        'custom_1' => 'mummy loves me more',
+        $this->getCustomFieldName('text') => 'mummy loves me more',
       ],
     ], $conflicts['aggressive']['resolved']);
   }
@@ -2019,13 +2018,13 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $params = [
       'domain_id' => CRM_Core_Config::domainID(),
       'name' => 'Organization Membership',
-      'member_of_contact_id' => 1,
-      'financial_type_id' => 1,
+      'member_of_contact_id' => CRM_Core_BAO_Domain::getDomain()->contact_id,
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'minimum_fee' => 10,
       'duration_unit' => 'year',
       'duration_interval' => 1,
       'period_type' => 'rolling',
-      'relationship_type_id' => 5,
+      'relationship_type_id' => $this->getRelationshipTypeID('Employee of'),
       'relationship_direction' => 'b_a',
       'visibility' => 'Public',
       'is_active' => 1,
@@ -2303,7 +2302,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $params = [
       'email' => 'man2@yahoo.com',
       'contact_type' => 'Individual',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ];
 
     $contact = $this->callAPISuccess('contact', 'create', $params);
@@ -2453,6 +2452,33 @@ class api_v3_ContactTest extends CiviUnitTestCase {
   }
 
   /**
+   * A custom greeting can be set with the Customized greeting id, whatever that option is labelled.
+   */
+  public function testCustomGreetingWithRelabelledCustomizedOption(): void {
+    $this->relabelCustomizedEmailGreeting('Benutzerdefiniert');
+    $contactID = $this->individualCreate();
+    $this->callAPISuccess('Contact', 'create', [
+      'id' => $contactID,
+      'email_greeting_id' => CRM_Core_PseudoConstant::getKey('CRM_Contact_BAO_Contact', 'email_greeting_id', 'Customized'),
+      'email_greeting_custom' => 'Howdy',
+    ]);
+    $greeting = $this->callAPISuccessGetSingle('Contact', ['version' => 4, 'id' => $contactID, 'return' => ['email_greeting_id:name', 'email_greeting_display']]);
+    $this->assertEquals('Customized', $greeting['email_greeting_id:name']);
+    $this->assertEquals('Howdy', $greeting['email_greeting_display']);
+  }
+
+  /**
+   * @param string $label
+   */
+  private function relabelCustomizedEmailGreeting(string $label): void {
+    \Civi\Api4\OptionValue::update(FALSE)
+      ->addWhere('option_group_id:name', '=', 'email_greeting')
+      ->addWhere('name', '=', 'Customized')
+      ->addValue('label', $label)
+      ->execute();
+  }
+
+  /**
    * Test Address parameters
    *
    * This include state_province, state_province_name, country
@@ -2468,7 +2494,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
         'api.address.create' => [
           'country' => 'United States',
           'state_province_id' => 'Michigan',
-          'location_type_id' => 1,
+          'location_type_id' => $this->getLocationTypeID('Home'),
         ],
       ],
       [
@@ -2478,7 +2504,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
         'api.address.create' => [
           'country' => 'United States',
           'state_province_id' => 'Alabama',
-          'location_type_id' => 1,
+          'location_type_id' => $this->getLocationTypeID('Home'),
         ],
       ],
     ];
@@ -2624,12 +2650,12 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'api.phone.create' => [
         0 => [
           'phone' => '111-111-1111',
-          'location_type_id' => 1,
+          'location_type_id' => $this->getLocationTypeID('Home'),
           'phone_type_id' => 1,
         ],
         1 => [
           'phone' => '222-222-2222',
-          'location_type_id' => 1,
+          'location_type_id' => $this->getLocationTypeID('Home'),
           'phone_type_id' => 2,
         ],
       ],
@@ -2717,7 +2743,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'api.contribution.create' => [
         'receive_date' => '2010-01-01',
         'total_amount' => 100.00,
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'payment_instrument_id' => 1,
         'non_deductible_amount' => 10.00,
         'fee_amount' => 50.00,
@@ -2730,7 +2756,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'api.contribution.create.1' => [
         'receive_date' => '2011-01-01',
         'total_amount' => 120.00,
-        'financial_type_id' => $this->_financialTypeId = 1,
+        'financial_type_id' => $this->_financialTypeId,
         'payment_instrument_id' => 1,
         'non_deductible_amount' => 10.00,
         'fee_amount' => 50.00,
@@ -2899,7 +2925,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'api.contribution.create' => [
         'receive_date' => '2010-01-01',
         'total_amount' => 100.00,
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'payment_instrument_id' => 1,
         'non_deductible_amount' => 10.00,
         'fee_amount' => 50.00,
@@ -2913,7 +2939,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'api.contribution.create.1' => [
         'receive_date' => '2011-01-01',
         'total_amount' => 120.00,
-        'financial_type_id' => 1,
+        'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'payment_instrument_id' => 1,
         'non_deductible_amount' => 10.00,
         'fee_amount' => 50.00,
@@ -3261,7 +3287,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
       'state_province_id' => 1004,
       'geo_code_1' => '37.79',
       'geo_code_2' => '-122.40',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'contact_id' => $contactID,
     ];
 
@@ -3398,7 +3424,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
           [
             'email' => 'spam@dev.null',
             'is_primary' => 0,
-            'location_type_id' => 1,
+            'location_type_id' => $this->getLocationTypeID('Home'),
           ],
         ],
       ],
@@ -3407,12 +3433,12 @@ class api_v3_ContactTest extends CiviUnitTestCase {
           [
             'phone' => '234-567-0001',
             'is_primary' => 1,
-            'location_type_id' => 1,
+            'location_type_id' => $this->getLocationTypeID('Home'),
           ],
           [
             'phone' => '234-567-0002',
             'is_primary' => 0,
-            'location_type_id' => 1,
+            'location_type_id' => $this->getLocationTypeID('Home'),
           ],
         ],
       ],
@@ -3529,7 +3555,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $this->callAPISuccess('address', 'create', [
       'contact_id' => $contactID,
       'city' => 'Cool City',
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
     $result = $this->callAPISuccess('contact', 'get', ['city' => 'Cool City', 'return' => 'contact_type']);
     $this->assertEquals(1, $result['count']);
@@ -3648,6 +3674,8 @@ class api_v3_ContactTest extends CiviUnitTestCase {
    *
    */
   public function testGetMatchesPhoneWithType(string $phoneKey): void {
+    // The data provider runs before the location types exist, so it names them; use the id.
+    $phoneKey = str_replace('-Main-', '-' . $this->getLocationTypeID('Main') . '-', $phoneKey);
     $ruleGroup = $this->createRuleGroup();
     $this->callAPISuccess('Rule', 'create', [
       'dedupe_rule_group_id' => $ruleGroup['id'],
@@ -3674,7 +3702,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     return [
       ['phone-Primary-1'],
       ['phone-Primary'],
-      ['phone-3-1'],
+      ['phone-Main-1'],
     ];
   }
 
@@ -3825,14 +3853,14 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $contactIDWithoutBlankAddress = ($isReverse ? $this->ids['contact'][0] : $this->ids['contact'][1]);
     $this->callAPISuccess('Address', 'create', [
       'contact_id' => $contactIDWithBlankAddress,
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
     $this->callAPISuccess('Address', 'create', [
       'country_id' => 'MX',
       'contact_id' => $contactIDWithoutBlankAddress,
       'street_address' => 'First on the left after you cross the border',
       'postal_code' => 90210,
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
     ]);
 
     $contact = $this->doMerge($isReverse);
@@ -4035,7 +4063,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $this->callAPISuccess('Contact', 'delete', ['id' => $this->ids['Contact'][3], 'skip_undelete' => TRUE]);
     $this->callAPIFailure('Contact', 'getmergedto', ['sequential' => 1, 'contact_id' => $this->ids['Contact'][0]]);
     $title = CRM_Contact_Page_View::setTitle($this->ids['Contact'][0], TRUE);
-    $this->assertStringContainsString('civicrm/profile/view&amp;reset=1&amp;gid=7&amp;id=3&amp;snippet=4', $title);
+    $this->assertStringContainsString('civicrm/profile/view&amp;reset=1&amp;gid=' . $this->getProfileID('summary_overlay') . '&amp;id=' . $this->ids['Contact'][0] . '&amp;snippet=4', $title);
   }
 
   /**
@@ -4863,7 +4891,7 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     $contactID = $this->callAPISuccess('Contact', 'create', $this->_params)['id'];
     $this->callAPISuccess('Address', 'create', [
       'contact_id' => $contactID,
-      'location_type_id' => 1,
+      'location_type_id' => $this->getLocationTypeID('Home'),
       'street_address' => '42 Operator Array Lane',
     ]);
 
@@ -4872,6 +4900,73 @@ class api_v3_ContactTest extends CiviUnitTestCase {
     ]);
     $this->assertEquals(1, $result['count']);
     $this->assertEquals($contactID, $result['id']);
+  }
+
+  /**
+   * Test that an unauthorized user cannot modify another contact's multi-record custom value in Api3.
+   */
+  public function testCannotModifyOtherContactCustomValue(): void {
+    $customGroup = $this->customGroupCreate([
+      'title' => 'MultiGroupApi3',
+      'name' => 'multigroup_api3',
+      'extends' => 'Contact',
+      'is_multiple' => 1,
+    ]);
+    $customField = $this->customFieldCreate([
+      'custom_group_id' => $customGroup['id'],
+      'label' => 'MultiFieldApi3',
+      'name' => 'multifield_api3',
+      'html_type' => 'Text',
+      'data_type' => 'String',
+    ]);
+
+    $victimContact = $this->individualCreate(['first_name' => 'Victim'], 'victim');
+    $userContact = $this->individualCreate(['first_name' => 'User'], 'user');
+
+    // Create a multi-record custom value on the victim contact
+    civicrm_api3('CustomValue', 'create', [
+      'entity_id' => $victimContact,
+      'custom_' . $customField['id'] . ':-1' => 'Original Data',
+    ]);
+    $tableName = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_CustomGroup', $customGroup['id'], 'table_name');
+    $fieldName = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_CustomField', $customField['id'], 'column_name');
+    $victimCustomId = (int) CRM_Core_DAO::singleValueQuery("SELECT id FROM `$tableName` WHERE entity_id = $victimContact");
+
+    CRM_Core_Session::singleton()->set('userID', $userContact);
+    CRM_Core_Config::singleton()->userPermissionClass->permissions = [
+      'access CiviCRM',
+      'edit my contact',
+      'view my contact',
+      'access all custom data',
+    ];
+
+    // Attempt to update victim's custom record while updating own contact
+    $this->callAPIFailure('Contact', 'create', [
+      'id' => $userContact,
+      'custom_' . $customField['id'] . '_' . $victimCustomId => 'Hacked Data',
+      'check_permissions' => 1,
+    ]);
+
+    // Ensure the victim's record was not changed
+    $storedValue = CRM_Core_DAO::singleValueQuery("SELECT `$fieldName` FROM `$tableName` WHERE id = $victimCustomId");
+    $this->assertEquals('Original Data', $storedValue);
+
+    // Create a multi-record custom value on the user's own contact
+    civicrm_api3('CustomValue', 'create', [
+      'entity_id' => $userContact,
+      'custom_' . $customField['id'] . ':-1' => 'My Data',
+    ]);
+    $userCustomId = (int) CRM_Core_DAO::singleValueQuery("SELECT id FROM `$tableName` WHERE entity_id = $userContact");
+
+    // Updating user's own custom record should succeed
+    $this->callAPISuccess('Contact', 'create', [
+      'id' => $userContact,
+      'custom_' . $customField['id'] . '_' . $userCustomId => 'My Updated Data',
+      'check_permissions' => 1,
+    ]);
+
+    $storedUserValue = CRM_Core_DAO::singleValueQuery("SELECT `$fieldName` FROM `$tableName` WHERE id = $userCustomId");
+    $this->assertEquals('My Updated Data', $storedUserValue);
   }
 
 }

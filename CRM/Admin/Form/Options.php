@@ -339,6 +339,7 @@ class CRM_Admin_Form_Options extends CRM_Admin_Form {
       'case_status',
       'encounter_medium',
       'case_type',
+      'contribution_status',
       'payment_instrument',
       'communication_style',
       'soft_credit_type',
@@ -527,7 +528,7 @@ class CRM_Admin_Form_Options extends CRM_Admin_Form {
       );
       $optionValue = CRM_Core_OptionValue::addOptionValue($params, $this->_gName, $this->_action, $this->_id);
 
-      CRM_Core_Session::setStatus(ts('The %1 \'%2\' has been saved.', [
+      CRM_Core_Session::setStatus(ts("The %1 '%2' has been saved.", [
         1 => $this->_gLabel,
         2 => $optionValue->label,
       ]), ts('Saved'), 'success');

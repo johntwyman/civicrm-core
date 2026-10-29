@@ -130,14 +130,16 @@ class CRM_Core_Permission {
 
     foreach ($permissions as $permission) {
       if (is_array($permission)) {
+        $orGranted = FALSE;
         foreach ($permission as $orPerm) {
           if (self::check($orPerm, $contactId)) {
-            //one of our 'or' permissions has succeeded - stop checking this permission
-            return TRUE;
+            $orGranted = TRUE;
+            break;
           }
         }
-        //none of our our conditions was met
-        return FALSE;
+        if (!$orGranted) {
+          return FALSE;
+        }
       }
       else {
         // This is an individual permission
@@ -700,7 +702,7 @@ class CRM_Core_Permission {
    * @return array
    */
   public static function getCorePermissions() {
-    $prefix = ts('CiviCRM') . ': ';
+    $prefix = ts('CiviCRM:') . ' ';
     $permissions = [
       'add contacts' => [
         'label' => $prefix . ts('add contacts'),
@@ -1270,6 +1272,7 @@ class CRM_Core_Permission {
     $permissions['financial_account']['get'] = $permissions['contribution']['get'];
     $permissions['financial_trxn']['get'] = $permissions['contribution']['get'];
     $permissions['contribution_soft'] = $permissions['contribution'];
+    $permissions['contribution_product'] = $permissions['contribution'];
 
     // Payment permissions
     $permissions['payment'] = [
@@ -1701,6 +1704,8 @@ class CRM_Core_Permission {
       'get' => ['access CiviCRM'],
       'create' => [['edit message templates', 'edit user-driven message templates', 'edit system workflow message templates']],
       'update' => [['edit message templates', 'edit user-driven message templates', 'edit system workflow message templates']],
+      // Only system workflow templates have a packaged original to revert to
+      'revert' => [['edit message templates', 'edit system workflow message templates']],
     ];
 
     $permissions['report_template']['update'] = 'save Report Criteria';
@@ -1904,13 +1909,15 @@ class CRM_Core_Permission {
   /**
    * Formats permissions into a nested list for Select2
    *
-   * @param array $groups Permission Types
+   * @internal - signature may change
+   *
+   * @param array $condition Api4 WHERE expression
    *
    * @return array[]
    */
-  public static function getPermissionList(array $groups): array {
+  public static function getPermissionList(array $condition): array {
     $perms = \Civi\Api4\Permission::get(FALSE)
-      ->addWhere('group', 'IN', $groups)
+      ->setWhere([$condition])
       ->addWhere('is_active', '=', 1)
       ->setOrderBy(['title' => 'ASC'])
       ->execute();
