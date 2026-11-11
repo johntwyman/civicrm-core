@@ -68,7 +68,7 @@ class CRM_Import_ParserTest extends CiviUnitTestCase {
         'Organization',
       ],
       'organization field 2' => [
-        ['sic_code' => 123],
+        ['sic_code' => '123'],
         'Organization',
       ],
       'household field 1' => [
@@ -142,7 +142,7 @@ class CRM_Import_ParserTest extends CiviUnitTestCase {
       // Ignored: we only care about the hook execution before save
     }
 
-    $this->assertEquals(1, $hookCalled);
+    $this->assertSame(1, $hookCalled);
     $expectedEntities = [
       '' => [
         'entity' => 'Activity',
@@ -250,7 +250,7 @@ class CRM_Import_ParserTest extends CiviUnitTestCase {
         ],
       ]);
       $result = Invasive::call([$parser, 'getTransformedFieldValue'], ['financial_type_id', 'Donation']);
-      $this->assertEquals('invalid_import_value', $result);
+      $this->assertSame('invalid_import_value', $result);
     }
     finally {
       if ($ft2ID) {

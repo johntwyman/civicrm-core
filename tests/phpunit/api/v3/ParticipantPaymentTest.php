@@ -116,8 +116,8 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
 
     //Check if participant payment is correctly retrieved.
     $paymentInfo = CRM_Contribute_BAO_Contribution::getPaymentInfo($this->participantID4, 'event');
-    $this->assertEquals('Completed', $paymentInfo['contribution_status']);
-    $this->assertEquals('100.00', $paymentInfo['total']);
+    $this->assertSame('Completed', $paymentInfo['contribution_status']);
+    $this->assertSame('100.00', $paymentInfo['total']);
   }
 
   /**
@@ -361,12 +361,12 @@ class api_v3_ParticipantPaymentTest extends CiviUnitTestCase {
     // Create contributions
     $disallowedContributionId = $this->contributionCreate([
       'contact_id' => $disallowedContactId,
-      'financial_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Event Fee'),
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'total_amount' => 50,
     ]);
     $allowedContributionId = $this->contributionCreate([
       'contact_id' => $allowedContactId,
-      'financial_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Event Fee'),
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'total_amount' => 50,
     ]);
 

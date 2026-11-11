@@ -37,6 +37,20 @@ return [
     'serialize' => CRM_Core_DAO::SERIALIZE_SEPARATOR_BOOKEND,
     'settings_pages' => ['display' => ['section' => 'contact', 'weight' => 10]],
   ],
+  'contact_summary_tab_counts' => [
+    'group_name' => 'CiviCRM Preferences',
+    'group' => 'core',
+    'name' => 'contact_summary_tab_counts',
+    'type' => 'Boolean',
+    'html_type' => 'toggle',
+    'default' => 1,
+    'add' => '6.21',
+    'title' => ts('Contact Summary Tab Counts'),
+    'is_domain' => 1,
+    'is_contact' => 0,
+    'help_text' => ts('Display record counts on contact summary tabs. Disabling this improves performance on large databases by eliminating count queries.'),
+    'settings_pages' => ['display' => ['section' => 'contact', 'weight' => 15]],
+  ],
   'contact_edit_options' => [
     'group_name' => 'CiviCRM Preferences',
     'group' => 'core',
@@ -263,6 +277,22 @@ return [
     'is_contact' => 0,
     'help_text' => ts('If enabled, some operations will be transferred to background workers. This requires configuring a background service.'),
     'settings_pages' => ['misc' => ['weight' => 30, 'section' => 'performance']],
+  ],
+  'group_multiple_parents' => [
+    'group_name' => 'CiviCRM Preferences',
+    'group' => 'core',
+    'name' => 'group_multiple_parents',
+    'type' => 'Boolean',
+    'html_type' => 'toggle',
+    'quick_form_type' => 'YesNo',
+    'default' => 0,
+    'add' => '6.22',
+    'title' => ts('Allow multiple group parents'),
+    'is_domain' => 1,
+    'is_contact' => 0,
+    'help_text' => ts('When enabled, a group can inherit from multiple other groups (this setting has performance implications)'),
+    'validate_callback' => 'CRM_Contact_BAO_Group::validateGroupMultipleParents',
+    'settings_pages' => ['misc' => ['weight' => 40, 'section' => 'performance']],
   ],
   'defaultExternUrl' => [
     'group_name' => 'CiviCRM Preferences',
@@ -568,6 +598,7 @@ return [
     'default' => NULL,
     'add' => '5.43',
     'settings_pages' => ['misc' => ['weight' => 60, 'section' => 'pdf']],
+    'is_constant' => TRUE,
   ],
   'dompdf_chroot' => [
     'is_domain' => 1,
@@ -587,6 +618,7 @@ return [
     'default' => NULL,
     'add' => '5.43',
     'settings_pages' => ['misc' => ['weight' => 70, 'section' => 'pdf']],
+    'is_constant' => TRUE,
   ],
   'dompdf_enable_remote' => [
     'is_domain' => 1,
@@ -619,6 +651,7 @@ return [
     ],
     'default' => NULL,
     'add' => '5.43',
+    'is_constant' => TRUE,
   ],
   'weasyprint_path' => [
     'group_name' => 'CiviCRM Preferences',
@@ -639,6 +672,7 @@ return [
       'url' => 'https://weasyprint.org/',
     ],
     'settings_pages' => ['misc' => ['weight' => 90, 'section' => 'pdf']],
+    'is_constant' => TRUE,
   ],
   'wkhtmltopdfPath' => [
     'group_name' => 'CiviCRM Preferences',
@@ -659,6 +693,7 @@ return [
       'url' => 'https://wkhtmltopdf.org/',
     ],
     'settings_pages' => ['misc' => ['weight' => 95, 'section' => 'pdf']],
+    'is_constant' => TRUE,
   ],
   'checksum_timeout' => [
     'group_name' => 'CiviCRM Preferences',
@@ -947,6 +982,10 @@ return [
     'is_domain' => 1,
     'is_contact' => 0,
     'description' => ts('CiviCRM will use this setting as path to bootstrap WP.'),
+    // it would make a lot of sense for this to be a constant, but the wordpress
+    // plugin currently sets it during runtime
+    // TODO: use a default here instead, then use is_constant
+    // 'is_constant' => TRUE,
   ],
   'secure_cache_timeout_minutes' => [
     'group_name' => 'CiviCRM Preferences',

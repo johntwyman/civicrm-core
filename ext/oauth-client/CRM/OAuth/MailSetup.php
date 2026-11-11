@@ -3,6 +3,11 @@
 class CRM_OAuth_MailSetup {
 
   /**
+   * A mail account's token is tagged `MailSettings:{ID}`; there is no foreign key to the client.
+   */
+  const TOKEN_TAG_PREFIX = 'MailSettings:';
+
+  /**
    * Return a list of setup-options based on OAuth2 services.
    *
    * @see CRM_Utils_Hook::mailSetupActions()
@@ -87,7 +92,7 @@ class CRM_OAuth_MailSetup {
 
     \Civi\Api4\OAuthSysToken::update(FALSE)
       ->addWhere('id', '=', $token['id'])
-      ->setValues(['tag' => 'MailSettings:' . $mailSettings['id']])
+      ->setValues(['tag' => self::TOKEN_TAG_PREFIX . $mailSettings['id']])
       ->execute();
 
     CRM_Core_Session::setStatus(
@@ -113,12 +118,25 @@ class CRM_OAuth_MailSetup {
   public static function alterMailStore(&$mailSettings) {
     $token = civicrm_api4('OAuthSysToken', 'refresh', [
       'checkPermissions' => FALSE,
-      'where' => [['tag', '=', 'MailSettings:' . $mailSettings['id']]],
+      'where' => [['tag', '=', self::TOKEN_TAG_PREFIX . $mailSettings['id']]],
       'orderBy' => ['id' => 'DESC'],
     ])->first();
 
     if ($token === NULL) {
-      return;
+      // A rejected refresh leaves the token out of the result; without this the poll would go ahead
+      // with the account's (empty) password and fail as an IMAP login error.
+      $rejected = \Civi\Api4\OAuthSysToken::get(FALSE)
+        ->addSelect('error')
+        ->addWhere('tag', '=', self::TOKEN_TAG_PREFIX . $mailSettings['id'])
+        ->addOrderBy('id', 'DESC')
+        ->execute()
+        ->first();
+      if ($rejected === NULL) {
+        return;
+      }
+      $error = $rejected['error'] ?? [];
+      throw new \Civi\OAuth\OAuthException(sprintf('Could not refresh the OAuth token for mail store #%d: %s',
+        $mailSettings['id'], $error['error_description'] ?? $error['error'] ?? 'unknown error'));
     }
     // Not certain if 'refresh' will complain about staleness. Doesn't hurt to double-check.
     if (empty($token['access_token']) || $token['expires'] < CRM_Utils_Time::time()) {

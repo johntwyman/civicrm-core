@@ -106,7 +106,7 @@ class CRM_Core_Payment_ProcessorFormTest extends CiviUnitTestCase {
   }
 
   public function createTestableBillingProfile($name, $withState): void {
-    $billingID = CRM_Core_BAO_LocationType::getBilling();
+    $billingID = $this->getLocationTypeID('Billing');
 
     $this->ids['UFGroup']["{$name}_billing"] = $this->callAPISuccess('UFGroup', 'create', [
       'group_type' => 'Contact',
@@ -218,8 +218,8 @@ class CRM_Core_Payment_ProcessorFormTest extends CiviUnitTestCase {
       'custom'
     );
 
-    $this->assertEquals(TRUE, $canBeHiddenWithTheStandardProfile);
-    $this->assertEquals(FALSE, $canBeHiddenWithTheCustomProfile);
+    $this->assertTrue($canBeHiddenWithTheStandardProfile);
+    $this->assertFalse($canBeHiddenWithTheCustomProfile);
   }
 
   /**
@@ -232,7 +232,7 @@ class CRM_Core_Payment_ProcessorFormTest extends CiviUnitTestCase {
       "custom"
     );
 
-    $this->assertEquals(TRUE, $canBeHiddenWithTheCustomProfile);
+    $this->assertTrue($canBeHiddenWithTheCustomProfile);
   }
 
 }

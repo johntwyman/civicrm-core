@@ -49,7 +49,7 @@ class PseudoconstantTest extends Api4TestBase {
       ->setLoadOptions(['id', 'name', 'label'])
       ->execute()->first()['options'];
     $options = array_column($options, NULL, 'name');
-    $this->assertEquals('Fake Type', $options['Fake_Type']['label']);
+    $this->assertSame('Fake Type', $options['Fake_Type']['label']);
 
     $this->createTestRecord('Activity', [
       'activity_type_id:name' => 'Meeting',
@@ -72,8 +72,8 @@ class PseudoconstantTest extends Api4TestBase {
       ->execute();
 
     $this->assertCount(1, $act);
-    $this->assertEquals('Fake Type', $act[0]['activity_type_id:label']);
-    $this->assertEquals('Fake_Type', $act[0]['activity_type_id:name']);
+    $this->assertSame('Fake Type', $act[0]['activity_type_id:label']);
+    $this->assertSame('Fake_Type', $act[0]['activity_type_id:name']);
     $this->assertTrue(is_numeric($act[0]['activity_type_id']));
 
     $act = Activity::get()
@@ -85,7 +85,7 @@ class PseudoconstantTest extends Api4TestBase {
       ->execute();
 
     $this->assertCount(1, $act);
-    $this->assertEquals('Fake Type', $act[0]['activity_type_id:label']);
+    $this->assertSame('Fake Type', $act[0]['activity_type_id:label']);
     $this->assertTrue(is_numeric($act[0]['activity_type_id']));
 
     $act = Activity::get()
@@ -97,6 +97,49 @@ class PseudoconstantTest extends Api4TestBase {
 
     $this->assertCount(1, $act);
     $this->assertTrue(is_numeric($act[0]['activity_type_id']));
+  }
+
+  public function testUnknownPseudoconstantValueIsRejected(): void {
+    try {
+      Contact::create(FALSE)
+        ->addValue('first_name', 'Unknown')
+        ->addValue('gender_id:name', 'Not_A_Gender')
+        ->execute();
+      $this->fail('Expected an exception for an unknown gender_id:name');
+    }
+    catch (\CRM_Core_Exception $e) {
+      $this->assertSame('Invalid value for gender_id:name: "Not_A_Gender"', $e->getMessage());
+    }
+
+    try {
+      Contact::create(FALSE)
+        ->addValue('first_name', 'Unknown')
+        ->addValue('preferred_communication_method:name', ['Phone', 'Carrier_Pigeon'])
+        ->execute();
+      $this->fail('Expected an exception for an unknown preferred_communication_method:name');
+    }
+    catch (\CRM_Core_Exception $e) {
+      $this->assertSame('Invalid value for preferred_communication_method:name: "Carrier_Pigeon"', $e->getMessage());
+    }
+
+    try {
+      Contact::create(FALSE)
+        ->addValue('first_name', 'Unknown')
+        ->addValue('gender_id:nam', 'Female')
+        ->execute();
+      $this->fail('Expected an exception for the misspelled suffix gender_id:nam');
+    }
+    catch (\CRM_Core_Exception $e) {
+      $this->assertSame('Suffix ":nam" cannot be used to write gender_id; use :name, :abbr, :label', $e->getMessage());
+    }
+
+    // An empty value still clears the field.
+    $cid = $this->createTestRecord('Contact', ['first_name' => 'Known', 'gender_id:name' => 'Female'])['id'];
+    Contact::update(FALSE)
+      ->addWhere('id', '=', $cid)
+      ->addValue('gender_id:name', NULL)
+      ->execute();
+    $this->assertNull(Contact::get(FALSE)->addWhere('id', '=', $cid)->addSelect('gender_id')->execute()->single()['gender_id']);
   }
 
   public function testAddressOptions(): void {
@@ -132,20 +175,20 @@ class PseudoconstantTest extends Api4TestBase {
     $this->assertCount(3, $addr);
 
     // US - California
-    $this->assertEquals('CA', $addr[0]['state_province_id:abbr']);
-    $this->assertEquals('California', $addr[0]['state_province_id:name']);
-    $this->assertEquals('US', $addr[0]['country_id:name']);
-    $this->assertEquals('United States', $addr[0]['country_id:label']);
+    $this->assertSame('CA', $addr[0]['state_province_id:abbr']);
+    $this->assertSame('California', $addr[0]['state_province_id:name']);
+    $this->assertSame('US', $addr[0]['country_id:name']);
+    $this->assertSame('United States', $addr[0]['country_id:label']);
     // Uruguay - Canelones
-    $this->assertEquals('CA', $addr[1]['state_province_id:abbr']);
-    $this->assertEquals('Canelones', $addr[1]['state_province_id:name']);
-    $this->assertEquals('UY', $addr[1]['country_id:name']);
-    $this->assertEquals('Uruguay', $addr[1]['country_id:label']);
+    $this->assertSame('CA', $addr[1]['state_province_id:abbr']);
+    $this->assertSame('Canelones', $addr[1]['state_province_id:name']);
+    $this->assertSame('UY', $addr[1]['country_id:name']);
+    $this->assertSame('Uruguay', $addr[1]['country_id:label']);
     // Spain - Cádiz
-    $this->assertEquals('CA', $addr[2]['state_province_id:abbr']);
-    $this->assertEquals('Cádiz', $addr[2]['state_province_id:name']);
-    $this->assertEquals('ES', $addr[2]['country_id:name']);
-    $this->assertEquals('Spain', $addr[2]['country_id:label']);
+    $this->assertSame('CA', $addr[2]['state_province_id:abbr']);
+    $this->assertSame('Cádiz', $addr[2]['state_province_id:name']);
+    $this->assertSame('ES', $addr[2]['country_id:name']);
+    $this->assertSame('Spain', $addr[2]['country_id:label']);
   }
 
   public function testCustomOptions(): void {
@@ -208,9 +251,9 @@ class PseudoconstantTest extends Api4TestBase {
       ->addSelect('myPseudoconstantTest.Multicolor:name', 'myPseudoconstantTest.Multicolor:label', 'myPseudoconstantTest.Multicolor')
       ->execute()->first();
 
-    $this->assertEquals('blü', $result['myPseudoconstantTest.Color:label']);
-    $this->assertEquals('bl_', $result['myPseudoconstantTest.Color:name']);
-    $this->assertEquals("b'l", $result['myPseudoconstantTest.Color']);
+    $this->assertSame('blü', $result['myPseudoconstantTest.Color:label']);
+    $this->assertSame('bl_', $result['myPseudoconstantTest.Color:name']);
+    $this->assertSame("b'l", $result['myPseudoconstantTest.Color']);
     $this->assertEquals(['RED', "BL'UE"], $result['myPseudoconstantTest.Multicolor:label']);
     $this->assertEquals(['red', 'blue'], $result['myPseudoconstantTest.Multicolor:name']);
     $this->assertEquals(['r', "b'l"], $result['myPseudoconstantTest.Multicolor']);
@@ -263,10 +306,10 @@ class PseudoconstantTest extends Api4TestBase {
       ->addWhere('contact_id.gender_id:label', 'IN', ['Male', 'Female'])
       ->execute()->indexBy('contact_id');
     $this->assertCount(2, $emails);
-    $this->assertEquals('Work', $emails[$cid1]['location_type_id:name']);
-    $this->assertEquals('Home', $emails[$cid2]['location_type_id:name']);
-    $this->assertEquals('Male', $emails[$cid1]['contact_id.gender_id:label']);
-    $this->assertEquals('Female', $emails[$cid2]['contact_id.gender_id:label']);
+    $this->assertSame('Work', $emails[$cid1]['location_type_id:name']);
+    $this->assertSame('Home', $emails[$cid2]['location_type_id:name']);
+    $this->assertSame('Male', $emails[$cid1]['contact_id.gender_id:label']);
+    $this->assertSame('Female', $emails[$cid2]['contact_id.gender_id:label']);
 
     $emails = Email::get()
       ->addSelect('location_type_id:name', 'contact_id.gender_id:label', 'email', 'contact_id')
@@ -274,9 +317,9 @@ class PseudoconstantTest extends Api4TestBase {
       ->addWhere('location_type_id:name', 'IN', ['Home'])
       ->execute()->indexBy('contact_id');
     $this->assertCount(2, $emails);
-    $this->assertEquals('Home', $emails[$cid2]['location_type_id:name']);
-    $this->assertEquals('Home', $emails[$cid3]['location_type_id:name']);
-    $this->assertEquals('Female', $emails[$cid2]['contact_id.gender_id:label']);
+    $this->assertSame('Home', $emails[$cid2]['location_type_id:name']);
+    $this->assertSame('Home', $emails[$cid3]['location_type_id:name']);
+    $this->assertSame('Female', $emails[$cid2]['contact_id.gender_id:label']);
     $this->assertNull($emails[$cid3]['contact_id.gender_id:label']);
   }
 
@@ -292,8 +335,8 @@ class PseudoconstantTest extends Api4TestBase {
       ->addWhere('name', '=', 'tag_id')
       ->execute()->first()['options'];
     $options = array_column($options, NULL, 'name');
-    $this->assertEquals('colorful', $options[$tag]['description']);
-    $this->assertEquals('#aabbcc', $options[$tag]['color']);
+    $this->assertSame('colorful', $options[$tag]['description']);
+    $this->assertSame('#aabbcc', $options[$tag]['color']);
     $this->assertEquals($tag, $options[$tag]['name']);
     $this->assertEquals($tag, $options[$tag]['label']);
   }

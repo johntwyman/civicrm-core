@@ -75,7 +75,7 @@ class CRM_Financial_Form_PaymentFormsTest extends CiviUnitTestCase {
       ],
     ];
     $genericParams = [
-      'credit_card_number' => 4111111111111111,
+      'credit_card_number' => '4111111111111111',
       'payment_processor_id' => $processors[0],
       'cvv2' => '123',
       'credit_card_exp_date' => [
@@ -122,7 +122,7 @@ class CRM_Financial_Form_PaymentFormsTest extends CiviUnitTestCase {
       ->addWhere('participant_id', '=', $participant['id'])
       ->execute()->single()['cart_id'];
     $this->assertEquals($cart->id, $cartID);
-    $this->assertEquals(CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'), $participant['status_id']);
+    $this->assertEquals($this->getParticipantStatusID('Registered'), $participant['status_id']);
     $this->assertRequestValid(['x_city' => 'The+Shire', 'x_state' => 'IL', 'x_amount' => 300.0]);
   }
 

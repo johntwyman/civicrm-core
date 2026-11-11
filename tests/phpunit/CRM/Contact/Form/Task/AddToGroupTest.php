@@ -58,7 +58,7 @@ class CRM_Contact_Form_Task_AddToGroupTest extends CiviUnitTestCase {
       ->addWhere('contact_id', '=', $contact['id'])
       ->execute()
       ->count();
-    $this->assertEquals(1, $groupCount);
+    $this->assertSame(1, $groupCount);
   }
 
   /**
@@ -109,7 +109,7 @@ class CRM_Contact_Form_Task_AddToGroupTest extends CiviUnitTestCase {
       'amtgID' => $groupID,
     ]);
     $form->processForm();
-    $this->assertEquals('amtg', $form->getValueSetOnForm('context'));
+    $this->assertSame('amtg', $form->getValueSetOnForm('context'));
     $this->assertEquals($groupID, $form->getValueSetOnForm('amtgID'));
   }
 
@@ -147,10 +147,10 @@ class CRM_Contact_Form_Task_AddToGroupTest extends CiviUnitTestCase {
       ->addSelect('custom.*', 'id')
       ->addWhere('title', '=', 'Test Group With Custom Field')
       ->execute();
-    $this->assertEquals(1, $group->count());
+    $this->assertSame(1, $group->count());
     $group = $group->first();
     $this->assertArrayKeyExists('new_custom_group.Custom_Field', $group);
-    $this->assertEquals('Custom Value ABC', $group['new_custom_group.Custom_Field']);
+    $this->assertSame('Custom Value ABC', $group['new_custom_group.Custom_Field']);
 
     $groupCount = GroupContact::get()
       ->addWhere('group_id', '=', $group['id'])
@@ -158,7 +158,7 @@ class CRM_Contact_Form_Task_AddToGroupTest extends CiviUnitTestCase {
       ->addWhere('contact_id', '=', $contact['id'])
       ->execute()
       ->count();
-    $this->assertEquals(1, $groupCount);
+    $this->assertSame(1, $groupCount);
   }
 
 }

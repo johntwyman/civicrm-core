@@ -1300,7 +1300,7 @@ class CRM_Core_BAO_ActionScheduleTest extends CiviUnitTestCase {
   public function testMembershipDateMatch(): void {
     $contactID = $this->individualCreate(array_merge($this->fixtures['contact'], ['email' => 'test-member@example.com']));
     $membershipTypeID = $this->getMembershipTypeID();
-    $membership = $this->createTestEntity('Membership', array_merge($this->fixtures['rolling_membership'], ['status_id' => $this->getMembershipStatusID('New'), 'contact_id' => $contactID, 'membership_type_id' => $membershipTypeID]));
+    $membership = $this->createTestEntity('Membership', array_merge($this->fixtures['rolling_membership'], ['status_id:name' => 'New', 'contact_id' => $contactID, 'membership_type_id' => $membershipTypeID]));
     $this->createScheduleFromFixtures('sched_membership_join_2week', ['entity_value' => $membershipTypeID]);
 
     // start_date=2012-03-15 ; schedule is 2 weeks after join_date
@@ -1884,6 +1884,32 @@ class CRM_Core_BAO_ActionScheduleTest extends CiviUnitTestCase {
   }
 
   /**
+   * A recipient whose reminder throws is logged as failed and does not block the others.
+   */
+  public function testReminderErrorDoesNotBlockOtherRecipients(): void {
+    $this->callAPISuccess('Contact', 'create', $this->fixtures['contact_birthdate']);
+    $this->callAPISuccess('Contact', 'create', ['email' => 'test-birth_day2@example.com'] + $this->fixtures['contact_birthdate']);
+    $this->createScheduleFromFixtures('sched_contact_birth_day_yesterday');
+    $this->hookClass->setHook('civicrm_alterMailParams', function ($params) {
+      if (($params['toEmail'] ?? NULL) === 'test-birth_day@example.com') {
+        throw new TypeError('Ruh-roh');
+      }
+    });
+    $this->assertCronRuns([
+      [
+        'time' => '2005-07-08 20:00:00',
+        'recipients' => [['test-birth_day2@example.com']],
+      ],
+      [
+        // The failed reminder is not retried.
+        'time' => '2005-07-09 20:00:00',
+        'recipients' => [],
+      ],
+    ]);
+    $this->assertDBQuery(1, "SELECT COUNT(*) FROM civicrm_action_log WHERE is_error = 1 AND action_date_time IS NOT NULL AND message = 'Ruh-roh'");
+  }
+
+  /**
    * @throws \CRM_Core_Exception
    */
   public function testContactBirthDateAnniversary(): void {
@@ -2047,7 +2073,7 @@ class CRM_Core_BAO_ActionScheduleTest extends CiviUnitTestCase {
 
     //check if reference date is set to membership's join date
     //as per the action_start_date chosen for current schedule reminder
-    $this->assertEquals('2012-03-15 00:00:00',
+    $this->assertSame('2012-03-15 00:00:00',
       CRM_Core_DAO::getFieldValue('CRM_Core_DAO_ActionLog', $membership['contact_id'], 'reference_date', 'contact_id')
     );
 
@@ -2537,6 +2563,32 @@ class CRM_Core_BAO_ActionScheduleTest extends CiviUnitTestCase {
   }
 
   /**
+   * A simulated time passed to the reminder job does not outlast the job, also when it fails.
+   */
+  public function testProcessQueueResetsSimulatedTime(): void {
+    $this->callApiV3Success('Job', 'send_reminder', ['now' => '2005-07-08 20:00:00']);
+    $this->assertFalse(CRM_Utils_Time::isOverridden());
+
+    unset(\Civi::$statics['CRM_Core_BAO_ActionSchedule']['mappings']);
+    $fail = function () {
+      throw new TypeError('Ruh-roh');
+    };
+    \Civi::dispatcher()->addListener('civi.actionSchedule.getMappings', $fail);
+    try {
+      CRM_Core_BAO_ActionSchedule::processQueue('2005-07-08 20:00:00');
+      $this->fail('Expected TypeError');
+    }
+    catch (TypeError $e) {
+      $this->assertSame('Ruh-roh', $e->getMessage());
+    }
+    finally {
+      \Civi::dispatcher()->removeListener('civi.actionSchedule.getMappings', $fail);
+      unset(\Civi::$statics['CRM_Core_BAO_ActionSchedule']['mappings']);
+    }
+    $this->assertFalse(CRM_Utils_Time::isOverridden());
+  }
+
+  /**
    * Run a series of cron jobs and make an assertion about email deliveries.
    *
    * @param array $cronRuns
@@ -2846,7 +2898,7 @@ class CRM_Core_BAO_ActionScheduleTest extends CiviUnitTestCase {
       ], $this->fixtures[$fixture]['membership_type_id']))->execute()->first()['id'];
     }
     $params = array_merge($this->fixtures[$fixture], [
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Member_BAO_Membership', 'status_id', $status),
+      'status_id' => $this->getMembershipStatusID($status),
       'membership_type_id' => $membershipTypeID,
     ], $membershipOverrides);
     if (empty($params['contact_id'])) {
@@ -2856,7 +2908,7 @@ class CRM_Core_BAO_ActionScheduleTest extends CiviUnitTestCase {
     if ($emailParams) {
       Civi\Api4\Email::create(FALSE)->setValues(array_merge([
         'contact_id' => $membership['contact_id'],
-        'location_type_id' => $this->getLocationTypeID('Home'),
+        'location_type_id:name' => 'Home',
       ], $emailParams))->execute();
     }
     return $membership;

@@ -46,13 +46,6 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
   protected $_contributionId;
 
   /**
-   * Parameters to create payment processor.
-   *
-   * @var array
-   */
-  protected $_processorParams = [];
-
-  /**
    * Payment instrument mapping.
    *
    * @var array
@@ -95,17 +88,6 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
       'currency' => 'USD',
       'contact_id' => $this->_individualId,
       'financial_type_id' => $this->getFinancialTypeID('Donation'),
-    ];
-    $this->_processorParams = [
-      'domain_id' => 1,
-      'name' => 'Dummy',
-      'payment_processor_type_id' => 10,
-      'financial_account_id' => 12,
-      'is_active' => 1,
-      'user_name' => '',
-      'url_site' => 'https://dummy.com',
-      'url_recur' => 'https://dummy.com',
-      'billing_mode' => 1,
     ];
 
     $instruments = $this->callAPISuccess('contribution', 'getoptions', ['field' => 'payment_instrument_id']);
@@ -167,7 +149,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
 
     $this->submitPayment(70, 'live');
     $this->assertEquals($this->_contributionId, $this->paymentProcessorParams['contributionID']);
-    $this->assertEquals('Annual gala', $this->paymentProcessorParams['description']);
+    $this->assertSame('Annual gala', $this->paymentProcessorParams['description']);
   }
 
   /**
@@ -201,7 +183,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     // pay additional amount
     $this->submitPayment(50);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     // pay additional amount
     $this->submitPayment(20);
@@ -214,8 +196,8 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
       'return' => ['target_contact_id', 'assignee_contact_id', 'subject'],
     ])['values'];
     $this->assertCount(3, $activities);
-    $this->assertEquals('$ 50.00 - Payment for Contribution', $activities[1]['subject']);
-    $this->assertEquals('$ 20.00 - Payment for Contribution', $activities[2]['subject']);
+    $this->assertSame('$ 50.00 - Payment for Contribution', $activities[1]['subject']);
+    $this->assertSame('$ 20.00 - Payment for Contribution', $activities[2]['subject']);
     $this->assertEquals(CRM_Core_Session::singleton()->getLoggedInContactID(), $activities[0]['source_contact_id']);
     $this->assertEquals([$this->_individualId], $activities[0]['target_contact_id']);
     $this->assertEquals([], $activities[0]['assignee_contact_id']);
@@ -233,7 +215,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     // pay additional amount
     $this->submitPayment(50, NULL, TRUE);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     // pay additional amount by using credit card
     $this->submitPayment(20, 'live');
@@ -301,10 +283,10 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     // pay additional amount
     $this->submitPayment(70);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
-    $this->assertEquals('2019-04-01 00:00:00', $contribution['receive_date']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('2019-04-01 00:00:00', $contribution['receive_date']);
     $payment = $this->callAPISuccessGetSingle('Payment', ['contribution_id' => $contribution['id']]);
-    $this->assertEquals('2017-04-11 13:05:11', $payment['trxn_date']);
+    $this->assertSame('2017-04-11 13:05:11', $payment['trxn_date']);
 
     // pay additional amount
     $this->submitPayment(30);
@@ -334,15 +316,15 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     // pay additional amount
     $this->submitPayment(40);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->submitPayment(20);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->submitPayment(30);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->submitPayment(10);
     $this->checkResults([40, 20, 30, 10], 4);
@@ -359,15 +341,15 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     // pay additional amount
     $this->submitPayment(50);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->submitPayment(20, 'live');
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->submitPayment(20);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->submitPayment(10, 'live');
     $this->checkResults([50, 20, 20, 10], 4);
@@ -407,7 +389,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
         'payment_processor_id' => $this->paymentProcessorID,
         'credit_card_exp_date' => ['M' => 5, 'Y' => (int) date('Y') + 1],
         'credit_card_number' => '411111111111111',
-        'cvv2' => 234,
+        'cvv2' => '234',
         'credit_card_type' => 'Visa',
         "billing_city-$billingLocationTypeID" => 'Vancouver',
         "billing_state_province_id-$billingLocationTypeID" => $stateProvinceID['id'],
@@ -441,7 +423,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
   public function checkResults(array $amounts, int $count): void {
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $this->_contributionId]);
     $this->assertNotEmpty($contribution);
-    $this->assertEquals('Completed', $contribution['contribution_status']);
+    $this->assertSame('Completed', $contribution['contribution_status']);
 
     $this->callAPISuccessGetCount('EntityFinancialTrxn', [
       'entity_table' => 'civicrm_contribution',
@@ -463,7 +445,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     ]);
     $contribution = $this->callAPISuccess('Order', 'create', $orderParams);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $contribution['id']]);
-    $this->assertEquals('Pending', CRM_Core_PseudoConstant::getName('CRM_Contribute_BAO_Contribution', 'contribution_status_id', $contribution['contribution_status_id']));
+    $this->assertSame('Pending', CRM_Core_PseudoConstant::getName('CRM_Contribute_BAO_Contribution', 'contribution_status_id', $contribution['contribution_status_id']));
     $this->ids['Contribution']['pending'] = $this->_contributionId = $contribution['id'];
   }
 
@@ -479,7 +461,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
     ]);
     $contribution = $this->callAPISuccess('Order', 'create', $orderParams);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['id' => $contribution['id']]);
-    $this->assertEquals('Partially paid', CRM_Core_PseudoConstant::getName('CRM_Contribute_BAO_Contribution', 'contribution_status_id', $contribution['contribution_status_id']));
+    $this->assertSame('Partially paid', CRM_Core_PseudoConstant::getName('CRM_Contribute_BAO_Contribution', 'contribution_status_id', $contribution['contribution_status_id']));
     $this->_contributionId = $contribution['id'];
   }
 
@@ -515,7 +497,7 @@ class CRM_Contribute_Form_AdditionalPaymentTest extends CiviUnitTestCase {
    */
   public function testMultiplePaymentForPendingPayLaterContributionHasCorrectionAllocation(): void {
     $this->enableTaxAndInvoicing();
-    $this->addTaxAccountToFinancialType(CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Donation'), ['tax_rate' => 20]);
+    $this->addTaxAccountToFinancialType($this->getFinancialTypeID('Donation'), ['tax_rate' => 20]);
     $this->createPendingOrder();
 
     $this->submitPayment(60);

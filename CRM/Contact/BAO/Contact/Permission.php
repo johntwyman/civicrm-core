@@ -126,7 +126,7 @@ WHERE contact_id IN ({$contact_id_list})
 
     // if some have been rejected, double check for permissions inherited by relationship
     if (count($result_set) < count($contact_ids)) {
-      $rejected_contacts = array_diff_key($contact_ids, $result_set);
+      $rejected_contacts = array_keys(array_diff_key(array_flip($contact_ids), $result_set));
       // @todo consider storing these to the acl cache for next time, since we have fetched.
       $allowed_by_relationship = self::relationshipList($rejected_contacts, $type);
       foreach ($allowed_by_relationship as $contact_id) {
@@ -160,16 +160,17 @@ WHERE contact_id IN ({$contact_id_list})
       return TRUE;
     }
 
-    // FIXME: push this somewhere below, to not give this permission so many rights
-    $isDeleted = (bool) CRM_Core_DAO::getFieldValue('CRM_Contact_DAO_Contact', $id, 'is_deleted');
-    if (CRM_Core_Permission::check('access deleted contacts', $userID) && $isDeleted) {
-      return TRUE;
-    }
-
     // short circuit for admin rights here so we avoid unneeeded queries
     // some duplication of code, but we skip 3-5 queries
     if (CRM_Core_Permission::check('edit all contacts', $userID) ||
       ($type == CRM_Core_Permission::VIEW && CRM_Core_Permission::check('view all contacts', $userID))
+    ) {
+      return TRUE;
+    }
+
+    // FIXME: push this somewhere below, to not give this permission so many rights
+    if (CRM_Core_Permission::check('access deleted contacts', $userID) &&
+      CRM_Core_DAO::getFieldValue('CRM_Contact_DAO_Contact', $id, 'is_deleted')
     ) {
       return TRUE;
     }

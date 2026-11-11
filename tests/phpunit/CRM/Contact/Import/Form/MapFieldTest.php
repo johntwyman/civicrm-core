@@ -27,6 +27,7 @@ use Civi\Api4\UserJob;
 class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
 
   use CRMTraits_Custom_CustomDataTrait;
+  use CRMTraits_Import_MapperTrait;
 
   /**
    * Map field form.
@@ -59,13 +60,7 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
    * @throws \CRM_Core_Exception
    */
   public function testSubmit(array $params, array $mapper, array $expecteds = []): void {
-    // The data provider runs before the location types exist, so it gives names; look up the ids.
-    foreach ($mapper as &$mapperField) {
-      if (isset($mapperField[1]) && !is_numeric($mapperField[1])) {
-        $mapperField[1] = $this->getLocationTypeID($mapperField[1]);
-      }
-    }
-    unset($mapperField);
+    $mapper = $this->convertMapperNamesToIDs($mapper);
     foreach ($expecteds as &$expected) {
       foreach ($expected['result'] ?? [] as $key => $expectedValues) {
         if (isset($expectedValues['location_type_id'])) {
@@ -237,15 +232,15 @@ class CRM_Contact_Import_Form_MapFieldTest extends CiviUnitTestCase {
     $processor = new CRM_Import_ImportProcessor();
     $processor->setMappingID($mapping['id']);
     $processor->setMetadata($parser->getFieldsMetadata());
-    $this->assertEquals(3, $processor->getPhoneOrIMTypeID(10));
-    $this->assertEquals(3, $processor->getPhoneTypeID(10));
+    $this->assertSame('3', $processor->getPhoneOrIMTypeID(10));
+    $this->assertSame('3', $processor->getPhoneTypeID(10));
     $this->assertEquals($this->getLocationTypeID('Home'), $processor->getLocationTypeID(10));
-    $this->assertEquals(2, $processor->getWebsiteTypeID(8));
+    $this->assertSame('2', $processor->getWebsiteTypeID(8));
     $this->assertEquals($this->getRelationshipTypeID('Sibling of') . '_a_b', $processor->getRelationshipKey(9));
-    $this->assertEquals('addressee', $processor->getFieldName(0));
-    $this->assertEquals('street_address', $processor->getFieldName(3));
+    $this->assertSame('addressee', $processor->getFieldName(0));
+    $this->assertSame('street_address', $processor->getFieldName(3));
     $this->assertEquals($this->getCustomFieldName('text'), $processor->getFieldName(4));
-    $this->assertEquals('url', $processor->getFieldName(8));
+    $this->assertSame('url', $processor->getFieldName(8));
   }
 
   /**

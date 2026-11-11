@@ -74,7 +74,7 @@ class CRM_Price_BAO_PriceFieldTest extends CiviUnitTestCase {
     }
     $priceFieldParams['default_option'] = 3;
     $options = $this->callAPISuccess('PriceFieldValue', 'get', ['price_field_id' => $priceField['id']]);
-    $this->assertEquals(3, $options['count']);
+    $this->assertSame(3, $options['count']);
   }
 
   /**
@@ -82,6 +82,39 @@ class CRM_Price_BAO_PriceFieldTest extends CiviUnitTestCase {
    */
   public function testGetFromPseudoConstant(): void {
     $this->assertNotEmpty(CRM_Core_PseudoConstant::getKey('CRM_Price_BAO_PriceField', 'price_set_id', 'default_contribution_amount'));
+  }
+
+  /**
+   * A PHP error while saving an option rolls back the whole price field.
+   */
+  public function testCreateRollsBackOnError(): void {
+    $priceSetID = $this->callAPISuccess('PriceSet', 'create', [
+      'extends' => 'CiviContribute',
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
+      'title' => 'Rollback Price Set',
+    ])['id'];
+    $this->hookClass->setHook('civicrm_post', function ($op, $objectName, $objectId, $objectRef) {
+      if ($objectName === 'PriceFieldValue' && $objectRef->label === 'Medium') {
+        throw new TypeError('Ruh-roh');
+      }
+    });
+    $params = [
+      'label' => 'Rollback Amount',
+      'html_type' => 'Radio',
+      'financial_type_id' => $this->getFinancialTypeID('Donation'),
+      'price_set_id' => $priceSetID,
+      'option_label' => [1 => 'Low', 2 => 'Medium'],
+      'option_amount' => [1 => 10, 2 => 50],
+      'option_weight' => [1 => 1, 2 => 2],
+    ];
+    try {
+      CRM_Price_BAO_PriceField::create($params);
+      $this->fail('The error should reach the caller');
+    }
+    catch (CRM_Core_Exception $e) {
+      $this->assertSame('Ruh-roh', $e->getMessage());
+    }
+    $this->assertDBQuery(0, 'SELECT COUNT(*) FROM civicrm_price_field WHERE price_set_id = %1', [1 => [$priceSetID, 'Integer']]);
   }
 
 }

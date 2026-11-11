@@ -252,9 +252,38 @@ class CRM_Core_BAO_CustomValueTableTest extends CiviUnitTestCase {
 
     $entityValues = CRM_Core_BAO_CustomValueTable::getEntityValues($contactID, 'Individual');
 
-    $this->assertEquals('<p><strong>This is a <u>test</u></p>', $entityValues[$customField['id']],
+    $this->assertSame('<p><strong>This is a <u>test</u></p>', $entityValues[$customField['id']],
       'Checking same for returned value.'
     );
+  }
+
+  public function testGetEntityValuesCountsAllRecordsOnMiddlePage(): void {
+    $contactID = $this->createTestEntity('Contact', ['contact_type' => 'Individual', 'first_name' => 'Multi'])['id'];
+    $customGroup = $this->createTestEntity('CustomGroup', [
+      'title' => 'Paged records',
+      'extends' => 'Contact',
+      'is_multiple' => TRUE,
+      'style' => 'Tab',
+    ]);
+    $customField = $this->createTestEntity('CustomField', [
+      'custom_group_id' => $customGroup['id'],
+      'label' => 'Record',
+      'data_type' => 'String',
+      'html_type' => 'Text',
+    ]);
+    $params = [
+      'entityID' => $contactID,
+      'custom_' . $customField['id'] . '_-1' => 'First',
+      'custom_' . $customField['id'] . '_-2' => 'Second',
+      'custom_' . $customField['id'] . '_-3' => 'Third',
+      'custom_' . $customField['id'] . '_-4' => 'Fourth',
+    ];
+    CRM_Core_BAO_CustomValueTable::setValues($params);
+
+    $result = CRM_Core_BAO_CustomValueTable::getEntityValues($contactID, NULL, [$customField['id']], TRUE, ['offset' => 1, 'rowCount' => 2]);
+    $this->assertSame(4, $result['count']);
+    unset($result['count']);
+    $this->assertCount(2, $result);
   }
 
   public function testCustomGroupMultiple(): void {
@@ -310,7 +339,7 @@ class CRM_Core_BAO_CustomValueTableTest extends CiviUnitTestCase {
     $sql = "SELECT COUNT(*) FROM $table WHERE entity_id = $contactID AND " . implode(' IS NULL AND ', $columns) . ' IS NULL';
 
     CRM_Core_BAO_CustomValueTable::setValues($params);
-    $this->assertEquals(0, CRM_Core_DAO::singleValueQuery($sql));
+    $this->assertSame('0', CRM_Core_DAO::singleValueQuery($sql));
 
     foreach (array_keys($params) as $key) {
       if ($key !== 'entityID') {
@@ -318,7 +347,7 @@ class CRM_Core_BAO_CustomValueTableTest extends CiviUnitTestCase {
       }
     }
     CRM_Core_BAO_CustomValueTable::setValues($params);
-    $this->assertEquals(1, CRM_Core_DAO::singleValueQuery($sql));
+    $this->assertSame('1', CRM_Core_DAO::singleValueQuery($sql));
   }
 
   public static function emptyValues(): array {

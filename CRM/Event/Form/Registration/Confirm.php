@@ -1086,7 +1086,7 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
   private function saveOrder(array $contacts): CRM_Contribute_BAO_Contribution {
     $financialTypeID = !empty($this->getEventValue('financial_type_id')) ? $this->getEventValue('financial_type_id') : $this->getOrder()->getFinancialTypeID();
 
-    $order = Order::create()->setContributionValues([
+    $order = Order::create(FALSE)->setContributionValues([
       'contact_id' => $contacts[0],
       'financial_type_id' => $financialTypeID,
       'receive_date' => date('YmdHis'),
@@ -1126,19 +1126,6 @@ class CRM_Event_Form_Registration_Confirm extends CRM_Event_Form_Registration {
 
     $transaction->commit();
     return $contribution;
-  }
-
-  /**
-   * @return string|null
-   * @throws \CRM_Core_Exception
-   */
-  private function getReceiptDate(): ?string {
-    $receiptDate = NULL;
-
-    if ($this->getEventValue('is_email_confirm')) {
-      $receiptDate = date('YmdHis');
-    }
-    return $receiptDate;
   }
 
 }

@@ -129,7 +129,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       ->addOrderBy('id', 'DESC')
       ->execute()
       ->first();
-    $this->assertEquals('Random thing', $participant[$this->getCustomFieldName('text', 4)]);
+    $this->assertSame('Random thing', $participant[$this->getCustomFieldName('text', 4)]);
   }
 
   /**
@@ -171,7 +171,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       $this->getPriceFieldKey() => $this->ids['PriceFieldValue']['PaidEvent_student'],
       'check_number' => '879',
       'receive_date' => '2020-01-31 00:51:00',
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'trxn_id' => '',
       'contribution_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending'),
       'total_amount' => '20',
@@ -179,15 +179,15 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       'from_email_address' => '"FIXME" <info@EXAMPLE.ORG>',
       'receipt_text' => 'Contact the Development Department if you need to make any changes to your registration.',
       'role_id' => [0 => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Pending from pay later'),
+      'status_id' => $this->getParticipantStatusID('Pending from pay later'),
       'source' => 'I wrote this',
       'note' => 'I wrote a note',
       'event_id' => $this->getEventID(),
     ], ['cid' => $this->individualCreate()])
-      ->postProcess();;
+      ->postProcess();
     $participant = $this->callAPISuccessGetSingle('Participant', []);
     $contribution = $this->callAPISuccessGetSingle('Contribution', ['version' => 4]);
-    $this->assertEquals(2, $contribution['contribution_status_id']);
+    $this->assertSame(2, $contribution['contribution_status_id']);
     $this->callAPISuccessGetSingle('FinancialItem', []);
 
     $lineItem = LineItem::get()
@@ -195,15 +195,15 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       ->addWhere('entity_table', '=', 'civicrm_participant')
       ->addOrderBy('id')
       ->execute()->first();
-    $this->assertEquals(100, $lineItem['line_total']);
+    $this->assertSame(100.0, $lineItem['line_total']);
     $financialItems = $this->callAPISuccess('FinancialItem', 'get', []);
     $sum = 0;
     foreach ($financialItems['values'] as $financialItem) {
       $sum += $financialItem['amount'];
     }
-    $this->assertEquals(100, $sum);
+    $this->assertSame(100.0, $sum);
     $participant = $this->callAPISuccessGetSingle('Participant', []);
-    $this->assertEquals(100, $participant['participant_fee_amount']);
+    $this->assertSame('100.00', $participant['participant_fee_amount']);
 
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
       $this->getPriceFieldKey() => $this->ids['PriceFieldValue']['PaidEvent_family_package'],
@@ -222,15 +222,15 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       ->addOrderBy('id')
       ->execute();
     // Participants is updated to 0 but line remains.
-    $this->assertEquals(0, $lineItems[0]['line_total']);
-    $this->assertEquals(1550.55, $lineItems[1]['line_total']);
+    $this->assertSame(0.0, $lineItems[0]['line_total']);
+    $this->assertSame(1550.55, $lineItems[1]['line_total']);
     $financialItems = $this->callAPISuccess('FinancialItem', 'get', []);
 
     $sum = 0;
     foreach ($financialItems['values'] as $financialItem) {
       $sum += $financialItem['amount'];
     }
-    $this->assertEquals(1550.55, $sum);
+    $this->assertSame(1550.55, $sum);
   }
 
   /**
@@ -258,12 +258,12 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       $this->getPriceFieldKey() => $this->ids['PriceFieldValue']['PaidEvent_student'],
       'check_number' => '879',
       'receive_date' => '2020-01-31 00:51:00',
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'trxn_id' => '',
       'contribution_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed'),
       'total_amount' => '100',
       'role_id' => [0 => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+      'status_id' => $this->getParticipantStatusID('Registered'),
       'source' => 'I wrote this',
       'event_id' => $this->getEventID(),
       '_qf_default' => '',
@@ -271,7 +271,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       ->processForm();
 
     $contribution = Contribution::get(FALSE)->addSelect('non_deductible_amount')->execute()->single();
-    $this->assertEquals(30, $contribution['non_deductible_amount']);
+    $this->assertSame(30.0, $contribution['non_deductible_amount']);
   }
 
   /**
@@ -290,7 +290,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       $this->getPriceFieldKey() => $this->ids['PriceFieldValue']['PaidEvent_student'],
       'send_receipt' => FALSE,
       'role_id' => [0 => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Pending from pay later'),
+      'status_id' => $this->getParticipantStatusID('Pending from pay later'),
       'source' => 'I wrote this',
       'event_id' => $this->getEventID(),
       'contact_id' => $this->individualCreate(),
@@ -299,13 +299,13 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
     $this->getTestForm('CRM_Event_Form_Participant', $params)->processForm();
 
     $participant = $this->callAPISuccessGetSingle('Participant', []);
-    $this->assertEquals(100, $participant['participant_fee_amount']);
+    $this->assertSame('100.00', $participant['participant_fee_amount']);
 
     $params[$this->getPriceFieldKey()] = $this->ids['PriceFieldValue']['PaidEvent_standard'];
     $this->getTestForm('CRM_Event_Form_Participant', $params, ['id' => $participant['id']])->processForm();
 
     $participant = $this->callAPISuccessGetSingle('Participant', ['id' => $participant['id']]);
-    $this->assertEquals(300, $participant['participant_fee_amount']);
+    $this->assertSame('300.00', $participant['participant_fee_amount']);
   }
 
   /**
@@ -329,7 +329,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       $this->getPriceFieldKey() => $this->ids['PriceFieldValue']['PaidEvent_student'],
       'send_receipt' => FALSE,
       'role_id' => [0 => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+      'status_id' => $this->getParticipantStatusID('Registered'),
       'source' => 'I wrote this',
       'event_id' => $this->getEventID(),
       'contact_id' => $this->individualCreate(),
@@ -338,7 +338,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
     $this->getTestForm('CRM_Event_Form_Participant', $params)->processForm();
 
     $participant = Participant::get()->addWhere('event_id', '=', $this->getEventID())->execute()->single();
-    $this->assertEquals(100, $participant['fee_amount']);
+    $this->assertSame(100.0, $participant['fee_amount']);
 
     $lineItems = LineItem::get()
       ->addWhere('entity_id', '=', $participant['id'])
@@ -370,14 +370,14 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'priceSetId' => $this->getPriceSetID('PaidEvent'),
       $this->getPriceFieldKey() => $this->ids['PriceFieldValue']['PaidEvent_student'],
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'check_number' => '879',
       'trxn_id' => '',
       'receive_date' => '2020-01-31 00:51:00',
       'contribution_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending'),
       'send_receipt' => FALSE,
       'role_id' => [0 => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Pending from pay later'),
+      'status_id' => $this->getParticipantStatusID('Pending from pay later'),
       'source' => 'I wrote this',
       'event_id' => $this->getEventID(),
       'contact_id' => $this->individualCreate(),
@@ -392,7 +392,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       ->execute());
 
     $params['record_contribution'] = FALSE;
-    $params['status_id'] = CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Attended');
+    $params['status_id'] = $this->getParticipantStatusID('Attended');
     $this->getTestForm('CRM_Event_Form_Participant', $params, ['id' => $participant['id']])->processForm();
 
     $lineItems = LineItem::get()
@@ -434,11 +434,11 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
     foreach ($financialItems as $financialItem) {
       $sum += $financialItem['amount'];
     }
-    $this->assertEquals(105, $sum);
+    $this->assertSame(105.0, $sum);
     $this->assertCount(3, $financialItems);
 
     $contribution = $this->callAPISuccessGetSingle('Contribution', []);
-    $this->assertEquals('Partially paid', $contribution['contribution_status']);
+    $this->assertSame('Partially paid', $contribution['contribution_status']);
 
     $this->callAPISuccess('Payment', 'create', [
       'contribution_id' => $contribution['id'],
@@ -450,7 +450,7 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
     ]);
 
     $result = $this->callAPISuccess('EntityFinancialTrxn', 'get', ['entity_table' => 'civicrm_financial_item', 'sequential' => 1, 'return' => ['entity_table', 'amount']])['values'];
-    $this->assertEquals(40, $result[2]['amount']);
+    $this->assertSame('40.00', $result[2]['amount']);
     $this->assertCount(4, $result);
   }
 
@@ -471,15 +471,15 @@ class CRM_Event_Form_ParticipantTest extends CiviUnitTestCase {
       'Junko Adams<br/>',
       '790L Lincoln St S<br />
 Baltimore, NY 10545<br />
-United States<br />',
+United States',
     ]);
     $participant = $this->callAPISuccessGetSingle('Participant', []);
-    $this->assertEquals('2018-09-04 00:00:00', $participant['participant_register_date']);
-    $this->assertEquals('Offline Registration for Event: Annual CiviCRM meet by:', $participant['participant_source']);
+    $this->assertSame('2018-09-04 00:00:00', $participant['participant_register_date']);
+    $this->assertSame('Offline Registration for Event: Annual CiviCRM meet by:', $participant['participant_source']);
     $contribution = $this->callAPISuccessGetSingle('Contribution', []);
-    $this->assertEquals(20, $contribution['total_amount']);
+    $this->assertSame('20.00', $contribution['total_amount']);
     $this->assertEquals(['Family Deal - 1'], $contribution['amount_level']);
-    $this->assertEquals('Debit Card', $contribution['payment_instrument']);
+    $this->assertSame('Debit Card', $contribution['payment_instrument']);
     $this->assertNotEmpty($contribution['receipt_date']);
     // Just check it's not something weird like 1970 without getting into flakey-precise.
     $this->assertGreaterThan(strtotime('yesterday'), strtotime($contribution['receipt_date']));
@@ -496,7 +496,7 @@ United States<br />',
       'price_field_value_id' => $this->ids['PriceFieldValue']['PaidEvent_family_package'],
       'tax_amount' => 0,
       // Interestingly the financial_type_id set in this test is ignored but currently locking in what is happening with this test so setting to 'actual'
-      'financial_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Event Fee'),
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
     ];
     foreach ($expected as $key => $value) {
       $this->assertEquals($value, $lineItem[$key], $key);
@@ -539,7 +539,7 @@ United States<br />',
     $this->submitForm(['is_monetary' => 1, 'financial_type_id' => $this->getFinancialTypeID('Donation')], $this->getSubmitParamsForCreditCardPayment($paymentProcessorID), TRUE, 'live');
 
     $contribution = Contribution::get(FALSE)->addSelect('contribution_status_id:name')->execute()->single();
-    $this->assertEquals('Pending', $contribution['contribution_status_id:name']);
+    $this->assertSame('Pending', $contribution['contribution_status_id:name']);
     $payments = Payment::get(FALSE)->execute();
     $this->assertCount(0, $payments);
   }
@@ -645,7 +645,7 @@ London,',
     $submittedValues['contact_id'] = $this->ids['Contact']['event'] = $this->individualCreate();
 
     if (!empty($eventParams['is_monetary'])) {
-      $phone = Phone::create()->setValues(['phone' => 1235, 'phone_type_id:name' => 'Mobile', 'phone_ext' => 456])->execute()->first();
+      $phone = Phone::create()->setValues(['phone' => '1235', 'phone_type_id:name' => 'Mobile', 'phone_ext' => '456'])->execute()->first();
       $address = Address::create()->setValues(['street_address' => '8 Baker Street', 'supplemental_address_1' => 'Upstairs', 'city' => 'London'])->execute()->first();
       $locationBlockID = LocBlock::create()->setValues(['phone_id' => $phone['id'], 'address_id' => $address['id']])->execute()->first()['id'];
       $event = $this->eventCreatePaid(array_merge([
@@ -705,7 +705,7 @@ London,',
         'price_set_id' => $this->getPriceSetID('PaidEvent'),
         'is_enter_qty' => 1,
         'html_type' => 'Text',
-        'financial_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Campaign Contribution'),
+        'financial_type_id' => $this->getFinancialTypeID('Campaign Contribution'),
       ];
       $fieldParams['label'] = $fieldToCreate['label'];
       $fieldParams['name'] = CRM_Utils_String::titleToVar($fieldToCreate['label']);
@@ -720,7 +720,7 @@ London,',
       'register_date' => date('Ymd'),
       'contact_id' => $this->ids['Contact']['individual_0'],
       'receive_date' => '2018-09-01',
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Pending from pay later'),
+      'status_id' => $this->getParticipantStatusID('Pending from pay later'),
       'role_id' => [1],
       'event_id' => $this->getEventID('PaidEvent'),
       'priceSetId' => $this->getPriceSetID('PaidEvent'),
@@ -733,7 +733,7 @@ London,',
       'record_contribution' => TRUE,
       'financial_type_id' => $this->getFinancialTypeID('Donation'),
       'contribution_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed'),
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'check_number' => '879',
       'send_receipt' => '1',
       'from_email_address' => 'admin@example.com',
@@ -755,8 +755,8 @@ London,',
     return [
       'register_date' => '2018-09-04',
       'status_id' => $this->getParticipantStatusID('Registered'),
-      'credit_card_number' => 4444333322221111,
-      'cvv2' => 123,
+      'credit_card_number' => '4444333322221111',
+      'cvv2' => '123',
       'credit_card_exp_date' => [
         'M' => 9,
         'Y' => date('Y', strtotime('+ 1 year')),
@@ -814,7 +814,7 @@ London,',
       'contact_id' => $this->getContactID(),
       'register_date' => '2020-01-31 00:50:00',
       'role_id' => [0 => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Partially paid'),
+      'status_id' => $this->getParticipantStatusID('Partially paid'),
       'source' => 'I wrote this',
       'note' => 'I wrote a note',
     ], $isQuickConfig)->getFirstMail();
@@ -833,8 +833,8 @@ London,',
     $this->callAPISuccess('Payment', 'create', [
       'contribution_id' => $this->callAPISuccessGetValue('Contribution', ['return' => 'id']),
       'total_amount'  => 20,
-      'check_number' => 879,
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'check_number' => '879',
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
     ]);
     $this->assertPartialPaymentResult($isQuickConfig, $message, FALSE);
   }
@@ -854,8 +854,8 @@ London,',
     $this->callAPISuccess('Payment', 'create', [
       'contribution_id' => $this->callAPISuccessGetValue('Contribution', ['return' => 'id']),
       'total_amount'  => 20,
-      'check_number' => 879,
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'check_number' => '879',
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
     ]);
     $this->assertPartialPaymentResult($isQuickConfig, $message, FALSE);
   }
@@ -869,7 +869,7 @@ London,',
    *   then any receipt triggered from that form would have the amount paid and balance.
    */
   protected function assertPartialPaymentResult(bool $isQuickConfig, array $message, bool $isPartPaymentMadeOnParticipantForm = TRUE): void {
-    $paymentInstrumentID = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check');
+    $paymentInstrumentID = $this->getPaymentInstrumentID('Check');
     $contribution = $this->callAPISuccessGetSingle('Contribution', []);
     $expected = [
       'contact_id' => $this->getContactID(),
@@ -1005,7 +1005,7 @@ London,',
       'record_contribution' => '1',
       'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
       'receive_date' => '2020-01-31 00:51:00',
-      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', 'Check'),
+      'payment_instrument_id' => $this->getPaymentInstrumentID('Check'),
       'trxn_id' => '',
       'contribution_status_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending'),
       'total_amount' => '20',
@@ -1014,7 +1014,7 @@ London,',
       'receipt_text' => 'Contact the Development Department if you need to make any changes to your registration.',
       'register_date' => '2020-01-31 00:50:00',
       'role_id' => [CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'role_id', 'Attendee')],
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', $participantStatus),
+      'status_id' => $this->getParticipantStatusID($participantStatus),
       'source' => 'I wrote this',
       'note' => 'I wrote a note',
     ];

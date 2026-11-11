@@ -91,10 +91,10 @@ class api_v3_RelationshipTypeTest extends CiviUnitTestCase {
 
     $result = $this->callAPIFailure('relationship_type', 'delete', $params);
     if ($version == 3) {
-      $this->assertEquals($result['error_message'], 'Mandatory key(s) missing from params array: id');
+      $this->assertSame('Mandatory key(s) missing from params array: id', $result['error_message']);
     }
     else {
-      $this->assertEquals($result['error_message'], 'Parameter "where" is required.');
+      $this->assertSame('Parameter "where" is required.', $result['error_message']);
     }
   }
 
@@ -233,7 +233,7 @@ class api_v3_RelationshipTypeTest extends CiviUnitTestCase {
     $second = $this->callAPISuccess('RelationshipType', 'Create', $secondRelTypeParams);
     $results = $this->callAPISuccess('relationship_type', 'get', []);
 
-    $this->assertEquals(2, $results['count']);
+    $this->assertSame(2, $results['count']);
   }
 
   /**
@@ -273,8 +273,8 @@ class api_v3_RelationshipTypeTest extends CiviUnitTestCase {
     ];
     $results = $this->callAPISuccess('relationship_type', 'get', $params);
 
-    $this->assertEquals(1, $results['count'], ' in line ' . __LINE__);
-    $this->assertEquals(1, $results['values'][$results['id']]['is_active'], ' in line ' . __LINE__);
+    $this->assertSame(1, $results['count'], ' in line ' . __LINE__);
+    $this->assertSame($this->apiValue(TRUE), $results['values'][$results['id']]['is_active'], ' in line ' . __LINE__);
   }
 
   /**

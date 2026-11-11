@@ -28,7 +28,7 @@ class CRM_Core_SmartyTest extends CiviUnitTestCase {
     $rendered = $smarty->fetchWith('eval:({$my_variable})', [
       'my_variable' => 'temporary value',
     ]);
-    $this->assertEquals('(temporary value)', $rendered);
+    $this->assertSame('(temporary value)', $rendered);
 
     $this->assertArrayNotHasKey('my_variable', $smarty->getTemplateVars());
   }
@@ -44,16 +44,16 @@ class CRM_Core_SmartyTest extends CiviUnitTestCase {
   public function testFetchWith_CleanNull(): void {
     $smarty = CRM_Core_Smarty::singleton();
     $smarty->assign('my_variable', NULL);
-    $this->assertEquals(NULL, $smarty->getTemplateVars()['my_variable']);
+    $this->assertNull($smarty->getTemplateVars()['my_variable']);
 
     $tpl = 'eval:({$my_variable})';
-    $this->assertEquals('()', $smarty->fetchWith($tpl, []));
-    $this->assertEquals('(temporary value)', $smarty->fetchWith($tpl, [
+    $this->assertSame('()', $smarty->fetchWith($tpl, []));
+    $this->assertSame('(temporary value)', $smarty->fetchWith($tpl, [
       'my_variable' => 'temporary value',
     ]));
 
     // Assert global state
-    $this->assertEquals(NULL, $smarty->getTemplateVars()['my_variable']);
+    $this->assertNull($smarty->getTemplateVars()['my_variable']);
   }
 
   /**
@@ -140,6 +140,26 @@ class CRM_Core_SmartyTest extends CiviUnitTestCase {
         ['world' => '<b>Earth</b>', 'markup' => '<i>Space</i>'],
       ],
     ];
+  }
+
+  /**
+   * Temporary variables are removed even when the template throws a PHP error.
+   */
+  public function testFetchWithCleansUpAfterError(): void {
+    $smarty = CRM_Core_Smarty::singleton();
+    $smarty->registerPlugin('modifier', 'crmTestThrowError', function () {
+      throw new TypeError('Ruh-roh');
+    });
+    try {
+      $smarty->fetchWith('eval:{$error_variable|crmTestThrowError}', ['error_variable' => 'temporary value']);
+      $this->fail('The error should reach the caller');
+    }
+    catch (TypeError $e) {
+    }
+    finally {
+      $smarty->unregisterPlugin('modifier', 'crmTestThrowError');
+    }
+    $this->assertArrayNotHasKey('error_variable', $smarty->getTemplateVars());
   }
 
 }

@@ -394,12 +394,14 @@ function afform_civicrm_permissionList(&$permissions) {
 }
 
 /**
- * Clear any local/in-memory caches based on afform data.
+ * Clear any caches based on afform data.
  */
 function _afform_clear() {
   $container = \Civi::container();
   $container->get('afform_scanner')->clear();
   $container->get('angular')->clear();
+  // Placement lists, see PlacementUtils::getAfformsForPlacement()
+  \Civi::cache('metadata')->clear();
 }
 
 /**
@@ -484,7 +486,7 @@ function afform_civicrm_post($op, $entityName, $id, $object, $params) {
       // Adding a new custom field to an empty field group may auto-generate afforms with menu routes.
       // @see Civi\Api4\Action\CustomGroup\GetAfforms::getCustomGroupAfforms
       if ($op === 'create' && $entityName === 'CustomField') {
-        \Civi::router()->clear();;
+        \Civi::router()->clear();
       }
     }
   }

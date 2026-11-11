@@ -53,6 +53,7 @@ use Civi\Payment\System;
 use Civi\Api4\OptionValue;
 use Civi\Test\Api3TestTrait;
 use Civi\Test\ContactTestTrait;
+use Civi\Test\CustomDataCleanup;
 use Civi\Test\DbTestTrait;
 use Civi\Test\EventTestTrait;
 use Civi\Test\FormTrait;
@@ -124,6 +125,12 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    * @var CRM_Core_Transaction
    */
   private $tx;
+
+  /**
+   * @var int[]|null
+   * @see \Civi\Test\CustomDataCleanup::snapshot()
+   */
+  private $customDataSnapshot;
 
   /**
    * @var array
@@ -563,7 +570,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
           'city' => 'Collinsville',
           'country_id' => 1228,
           'state_province_id' => 1003,
-          'postal_code' => 6022,
+          'postal_code' => '6022',
         ],
       ]);
       \Civi\Api4\SiteEmailAddress::save(FALSE)
@@ -605,6 +612,8 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     if ($this->tx) {
       $this->tx->rollback()->commit();
       $this->tx = NULL;
+      CustomDataCleanup::cleanup($this->customDataSnapshot);
+      $this->customDataSnapshot = NULL;
 
       CRM_Core_Transaction::forceRollbackIfEnabled();
       Manager::singleton(TRUE);
@@ -626,16 +635,18 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     if (!preg_match('/maria/i', $dbVer) || version_compare($dbVer, '10.5.2', '>=')) {
       // Supported by MySQL 5.7+ or MariaDB 10.5.2+. These provide some herd immunity.
       $releasedLocks = CRM_Core_DAO::singleValueQuery('SELECT RELEASE_ALL_LOCKS()');
-      $this->assertEquals(0, $releasedLocks, "The test should not leave any dangling locks. Found $releasedLocks");
+      $this->assertSame('0', $releasedLocks, "The test should not leave any dangling locks. Found $releasedLocks");
     }
 
+    // reset any custom directories
+    $this->customDirectories([]);
     // \CRM_Core_BAO_ConfigSetting::setEnabledComponents(\Civi::settings()->getDefault('enable_components'));
     \Civi::settings()->importValues($this->originalSettings);
 
     $this->cleanTempDirs();
     $this->unsetExtensionSystem();
     $this->assertEquals([], CRM_Core_DAO::$_nullArray);
-    $this->assertEquals(NULL, CRM_Core_DAO::$_nullObject);
+    $this->assertNull(CRM_Core_DAO::$_nullObject);
     // Setting large properties to NULL here ensures memory is released as each
     // test class is held in memory until the very end.
     $this->formController = NULL;
@@ -1031,7 +1042,6 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'title' => 'Test Contribution Page',
       'financial_type_id:name' => 'Donation',
       'currency' => 'USD',
-      'financial_account_id' => $this->getFinancialAccountID('Donation'),
       'is_active' => 1,
       'is_allow_other_amount' => 1,
       'min_amount' => 10,
@@ -1435,28 +1445,6 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
   }
 
   /**
-   * Add a UF Join Entry.
-   *
-   * @param array|null $params
-   *
-   * @return int
-   *   $id of created UF Join
-   */
-  public function ufjoinCreate(?array $params = NULL): int {
-    if ($params === NULL) {
-      $params = [
-        'is_active' => 1,
-        'module' => 'CiviEvent',
-        'entity_table' => 'civicrm_event',
-        'entity_id' => 3,
-        'weight' => 1,
-        'uf_group_id' => $this->getProfileID('name_and_address'),
-      ];
-    }
-    return $this->callAPISuccess('UFJoin', 'create', $params);
-  }
-
-  /**
    * @param array $params
    *   Optional parameters.
    * @param string $identifier
@@ -1805,14 +1793,16 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
 
     $tablesToTruncate = array_unique(array_merge($this->_tablesToTruncate, $tablesToTruncate));
 
-    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 0;');
+    // DELETE on these near-empty tables is far cheaper than TRUNCATE, which
+    // recreates each InnoDB table. Logging triggers are suppressed so the cleanup leaves no audit rows.
+    $loggingDisabled = CRM_Core_DAO::singleValueQuery('SELECT @civicrm_disable_logging');
+    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 0, @civicrm_disable_logging = 1');
     foreach ($tablesToTruncate as $table) {
-      $sql = "TRUNCATE TABLE $table";
-      CRM_Core_DAO::executeQuery($sql);
+      CRM_Core_DAO::executeQuery("DELETE FROM $table");
     }
-    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 1;');
+    CRM_Core_DAO::executeQuery('SET FOREIGN_KEY_CHECKS = 1, @civicrm_disable_logging = ' . ($loggingDisabled === NULL ? 'NULL' : (int) $loggingDisabled));
 
-    // Truncate resets the autoincrements, so re-apply separation
+    // Reset the emptied tables' autoincrements to their separated offsets.
     \Civi\Test::schema()->setAutoIncrement($tablesToTruncate);
   }
 
@@ -1902,7 +1892,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $priceFieldID = CRM_Core_DAO::singleValueQuery('SELECT LAST_INSERT_ID()');
     CRM_Core_DAO::executeQuery("INSERT INTO `civicrm_price_field_value` (`price_field_id`, `name`, `label`, `description`, `amount`, `count`, `max_value`, `weight`, `membership_type_id`, `membership_num_terms`, `is_default`, `is_active`, `financial_type_id`, `non_deductible_amount`) VALUES (%1, 'contribution_amount', 'Contribution Amount', NULL, '1', NULL, NULL, 1, NULL, NULL, 0, 1, %2, 0.00)", [
       1 => [$priceFieldID, 'Integer'],
-      2 => [CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Donation'), 'Integer'],
+      2 => [$this->getFinancialTypeID('Donation'), 'Integer'],
     ]);
     unset(Civi::$statics['CRM_Price_BAO_PriceSet']);
   }
@@ -1958,7 +1948,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       ->setDefaults([
         'domain_id' => 1,
         'member_of_contact_id' => CRM_Core_BAO_Domain::getDomain()->contact_id,
-        'financial_type_id' => $this->getFinancialTypeID('Member Dues'),
+        'financial_type_id:name' => 'Member Dues',
       ]
     )->execute();
   }
@@ -2097,31 +2087,18 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    *
    * @param array $customDirs
    *   With members:.
-   *   'php_path' Set to TRUE to use the default, FALSE or "" to disable support, or a string path to use another path
-   *   'template_path' Set to TRUE to use the default, FALSE or "" to disable support, or a string path to use another path
+   *   'php_path' Set to TRUE to use the default, FALSE or "" to disable support
+   *   'template_path' Set to TRUE to use the default, FALSE or "" to disable support
    */
   public function customDirectories($customDirs) {
-    $config = CRM_Core_Config::singleton();
+    $phpPath = !empty($customDirs['php_path']) ? (dirname(__DIR__) . '/custom_directories/php/') : NULL;
+    \Civi::settings()->updateConstant('customPHPPathDir', $phpPath);
 
-    if (empty($customDirs['php_path']) || $customDirs['php_path'] === FALSE) {
-      unset($config->customPHPPathDir);
-    }
-    elseif ($customDirs['php_path'] === TRUE) {
-      $config->customPHPPathDir = dirname(dirname(__FILE__)) . '/custom_directories/php/';
-    }
-    else {
-      $config->customPHPPathDir = $php_path;
-    }
+    $templatePath = !empty($customDirs['template_path']) ? (dirname(__DIR__) . '/custom_directories/templates/') : NULL;
+    \Civi::settings()->updateConstant('customTemplateDir', $templatePath);
 
-    if (empty($customDirs['template_path']) || $customDirs['template_path'] === FALSE) {
-      unset($config->customTemplateDir);
-    }
-    elseif ($customDirs['template_path'] === TRUE) {
-      $config->customTemplateDir = dirname(dirname(__FILE__)) . '/custom_directories/templates/';
-    }
-    else {
-      $config->customTemplateDir = $template_path;
-    }
+    // force reload of these core settings
+    CRM_Core_Config::singleton(TRUE, TRUE);
   }
 
   /**
@@ -2487,7 +2464,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
         'is_test' => 1,
         'financial_type_id' => $this->getFinancialTypeID('Donation'),
         'invoice_id' => 'abcd',
-        'trxn_id' => 345,
+        'trxn_id' => '345',
         'receive_date' => '2019-07-25 07:34:23',
       ]);
     }
@@ -2532,7 +2509,9 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    * call this at the beginning of setUp().
    *
    * Note: Recall that TRUNCATE and ALTER will force-commit transactions, so
-   * this option does not work with, e.g., custom-data.
+   * this option does not work with, e.g., custom-data. Custom groups and
+   * fields created during the test are deleted in tearDown(), but other rows
+   * written before the implicit commit remain.
    *
    * WISHLIST: Monitor SQL queries in unit-tests and generate an exception
    * if TRUNCATE or ALTER is called while using a transaction.
@@ -2542,6 +2521,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    */
   public function useTransaction($nest = TRUE) {
     if (!$this->tx) {
+      $this->customDataSnapshot = CustomDataCleanup::snapshot();
       $this->tx = new CRM_Core_Transaction($nest);
       $this->tx->rollback();
     }
@@ -2603,7 +2583,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       'is_active' => ['1' => 1],
       'price_set_id' => $priceSetID,
       'is_enter_qty' => 1,
-      'financial_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_DAO_Contribution', 'financial_type_id', 'Event Fee'),
+      'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
     ];
     if ($type === 'Radio') {
       foreach ($options as $index => $option) {
@@ -3032,7 +3012,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       ], 'special')['id'];
       $contributionPageID = $this->createTestEntity('ContributionPage', [
         'title' => 'Test Contribution Page',
-        'financial_type_id' => $this->getFinancialTypeID('Donation'),
+        'financial_type_id:name' => 'Donation',
         'currency' => 'NZD',
         'goal_amount' => 50,
         'is_pay_later' => 1,
@@ -3042,7 +3022,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
       $priceSetID = $this->createTestEntity('PriceSet', [
         'is_quick_config' => 0,
         'extends' => CRM_Core_Component::getComponentID('CiviMember'),
-        'financial_type_id' => $this->getFinancialTypeID('Donation'),
+        'financial_type_id:name' => 'Donation',
         'title' => 'my Page',
         'name' => 'member_not_quick_config',
       ])['id'];
@@ -3454,7 +3434,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     require_once 'CiviTest/CiviTestSMSProvider.php';
 
     // Option value params for CiviTestSMSProvider
-    $groupID = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_OptionGroup', 'sms_provider_name', 'id', 'name');
+    $groupID = $this->getOptionGroupID('sms_provider_name');
     $params = [
       'option_group_id' => $groupID,
       'label' => 'unittestSMS',
@@ -3501,7 +3481,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $stream = fopen('php://memory', 'r+');
     fwrite($stream, $output);
     rewind($stream);
-    $this->assertEquals("\xEF\xBB\xBF", substr($output, 0, 3));
+    $this->assertSame("\xEF\xBB\xBF", substr($output, 0, 3));
     $csv = Reader::fromString($output);
     if ($isFirstRowHeaders) {
       $csv->setHeaderOffset(0);
@@ -3830,7 +3810,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
   protected function basicCreateTest(int $version): void {
     $this->_apiversion = $version;
     $result = $this->callAPISuccess($this->_entity, 'create', $this->params);
-    $this->assertEquals(1, $result['count']);
+    $this->assertSame(1, $result['count']);
     $this->assertNotNull($result['values'][$result['id']]['id']);
     $this->getAndCheck($this->params, $result['id'], $this->_entity);
   }
@@ -3848,7 +3828,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
     $deleteParams = ['id' => $result['id']];
     $this->callAPISuccess($this->_entity, 'delete', $deleteParams);
     $checkDeleted = $this->callAPISuccess($this->_entity, 'get', []);
-    $this->assertEquals(0, $checkDeleted['count']);
+    $this->assertSame(0, $checkDeleted['count']);
   }
 
   /**
@@ -3882,7 +3862,7 @@ class CiviUnitTestCaseCommon extends PHPUnit\Framework\TestCase {
    * @noinspection PhpUnhandledExceptionInspection
    */
   public function assertLocationValidity(): void {
-    $this->assertEquals(0, CRM_Core_DAO::singleValueQuery('SELECT COUNT(*) FROM
+    $this->assertSame(0, (int) CRM_Core_DAO::singleValueQuery('SELECT COUNT(*) FROM
 
 (SELECT a1.contact_id
 FROM civicrm_address a1

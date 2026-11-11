@@ -69,7 +69,7 @@ class TranslationTest extends Api4TestBase implements TransactionalInterface, Ho
         'language' => 'fr_CA',
         'string' => 'Hello world',
       ],
-      '/Invalid status/',
+      '/Invalid value for status_id:name: "jumping"/',
     ];
 
     $es['malformedField'] = [
@@ -205,7 +205,7 @@ class TranslationTest extends Api4TestBase implements TransactionalInterface, Ho
       'checkPermissions' => FALSE,
       'values' => $record,
     ]);
-    $this->assertEquals(1, $createResults->count());
+    $this->assertSame(1, $createResults->count());
     foreach ($createResults as $createResult) {
       $badUpdate = $this->fillRecord($badUpdate);
       try {

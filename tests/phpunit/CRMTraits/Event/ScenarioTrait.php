@@ -44,7 +44,7 @@ trait CRMTraits_Event_ScenarioTrait {
    */
   protected function createScenarioMultipleParticipantPendingWithTax(): void {
     $this->eventCreatePaid();
-    $this->addTaxAccountToFinancialType(CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Event Fee'));
+    $this->addTaxAccountToFinancialType($this->getFinancialTypeID('Event Fee'));
     $form = $this->getTestForm('CRM_Event_Form_Registration_Register', [
       'first_name' => 'Participant1',
       'last_name' => 'LastName',
@@ -76,8 +76,8 @@ trait CRMTraits_Event_ScenarioTrait {
       ])
       ->addSubsequentForm('CRM_Event_Form_Registration_Confirm')
       ->processForm();
-    $this->assertEquals(660, $form->getTotalAmount());
-    $this->assertEquals(60, $form->getTotalTaxAmount());
+    $this->assertSame(660.0, $form->getTotalAmount());
+    $this->assertSame(60.0, $form->getTotalTaxAmount());
     $this->sentMail = $form->getMail();
     $participants = Participant::get(FALSE)
       ->addWhere('event_id', '=', $this->getEventID('PaidEvent'))
@@ -103,7 +103,7 @@ trait CRMTraits_Event_ScenarioTrait {
    */
   protected function createScenarioMultipleParticipantPendingWithTaxSkippingSecond(): void {
     $this->eventCreatePaid();
-    $this->addTaxAccountToFinancialType(CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Event Fee'));
+    $this->addTaxAccountToFinancialType($this->getFinancialTypeID('Event Fee'));
     $form = $this->getTestForm('CRM_Event_Form_Registration_Register', [
       'first_name' => 'Participant1',
       'last_name' => 'LastName',
@@ -140,8 +140,8 @@ trait CRMTraits_Event_ScenarioTrait {
       ])
       ->addSubsequentForm('CRM_Event_Form_Registration_Confirm')
       ->processForm();
-    $this->assertEquals(550, $form->getTotalAmount());
-    $this->assertEquals(50, $form->getTotalTaxAmount());
+    $this->assertSame(550.0, $form->getTotalAmount());
+    $this->assertSame(50.0, $form->getTotalTaxAmount());
     $this->sentMail = $form->getMail();
     $participants = Participant::get(FALSE)
       ->addWhere('event_id', '=', $this->getEventID('PaidEvent'))

@@ -223,7 +223,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       'entity_id' => $cancelledLineItem['id'],
       'entity_table' => 'civicrm_line_item',
     ]);
-    $this->assertEquals(2, $financialItems['count'], 'Financial Items for Cancelled fee is not proper');
+    $this->assertSame(2, $financialItems['count'], 'Financial Items for Cancelled fee is not proper');
 
     $expectedAmount = 100.00;
     foreach ($financialItems['values'] as $financialItem) {
@@ -259,7 +259,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       ->setContributionValues([
         'contact_id' => $this->ids['Contact']['individual_0'],
         'currency' => 'USD',
-        'financial_type_id' => $this->getFinancialTypeID('Event Fee'),
+        'financial_type_id:name' => 'Event Fee',
         'payment_instrument_id' => 4,
         'contribution_status_id:name' => 'Pending',
         'source' => 'Test set with information',
@@ -348,19 +348,19 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->submitForm($this->getCheapFeeID());
     $this->validateContribution($this->_cheapFee, 'Pending refund');
     $lineItem = $this->getParticipantLineItems();
-    $this->assertEquals('0.00', $lineItem[1]['line_total']);
+    $this->assertSame(0.0, $lineItem[1]['line_total']);
     $this->assertEquals($this->_cheapFee, $lineItem[0]['line_total']);
 
     $this->submitForm($this->getExpensiveValueID());
     $this->validateContribution($this->_expensiveFee, 'Completed');
     $lineItem = $this->getParticipantLineItems();
     $this->assertEquals($this->_expensiveFee, $lineItem[1]['line_total']);
-    $this->assertEquals('0.00', $lineItem[0]['line_total']);
+    $this->assertSame(0.0, $lineItem[0]['line_total']);
 
     $this->submitForm($this->getVeryExpensiveID());
     $lineItem = $this->getParticipantLineItems();
-    $this->assertEquals('0.00', $lineItem[1]['line_total']);
-    $this->assertEquals('0.00', $lineItem[2]['line_total']);
+    $this->assertSame(0.0, $lineItem[1]['line_total']);
+    $this->assertSame(0.0, $lineItem[2]['line_total']);
     $this->assertEquals($this->_veryExpensive, $lineItem[0]['line_total']);
     $this->validateContribution($this->_veryExpensive, 'Partially paid');
   }
@@ -404,7 +404,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       'entity_id' => $cancelledLineItem['id'],
       'entity_table' => 'civicrm_line_item',
     ]);
-    $this->assertEquals(2, $financialItems['count'], 'Financial Items for Cancelled fee is not proper');
+    $this->assertSame(2, $financialItems['count'], 'Financial Items for Cancelled fee is not proper');
 
     $expectedAmount = 100.00;
     foreach ($financialItems['values'] as $financialItem) {
@@ -559,7 +559,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
   private function submitForm(?int $participantFee = NULL, array $priceSetParams = []): void {
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', $priceSetParams + [
       $this->getPriceFieldFormLabel('PaidEvent') => $participantFee,
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+      'status_id' => $this->getParticipantStatusID('Registered'),
     ], [
       'id' => $this->ids['Participant']['order'],
       'action' => CRM_Core_Action::UPDATE,
@@ -588,7 +588,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $fromEmailAddress = array_key_first(CRM_Event_BAO_Event::getFromEmailIds($this->getEventID())['from_email_id']);
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
       $this->getPriceFieldFormLabel('PaidEvent') => $this->getCheapFeeID(),
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'On waitlist'),
+      'status_id' => $this->getParticipantStatusID('On waitlist'),
       'send_receipt' => 1,
       'from_email_address' => $fromEmailAddress,
       'receipt_text' => 'This is my distinctive confirmation message',
@@ -615,7 +615,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
 
     $lineItem = $this->getLineItemForPriceFieldValue($this->ids['PriceFieldValue']['thirty_five_euros']);
     $amounts = $this->getFinancialItemAmountsForLineItem($lineItem['id']);
-    $this->assertEquals(1.0, (float) $lineItem['qty']);
+    $this->assertSame(1.0, (float) $lineItem['qty']);
     $this->assertEqualsWithDelta(
       (float) $lineItem['line_total'],
       array_sum($amounts),
@@ -636,8 +636,8 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->submitForm(NULL, [$this->getPriceFieldFormLabel('thirty_five_euros') => $this->ids['PriceFieldValue']['thirty_five_euros']]);
 
     $lineItem = $this->getLineItemForPriceFieldValue($this->ids['PriceFieldValue']['ten_euros']);
-    $this->assertEquals(0.0, (float) $lineItem['qty']);
-    $this->assertEquals(0.0, (float) $lineItem['line_total']);
+    $this->assertSame(0.0, (float) $lineItem['qty']);
+    $this->assertSame(0.0, (float) $lineItem['line_total']);
     $this->assertEquals(
       [-10.00, 10.00],
       $this->getFinancialItemAmountsForLineItem($lineItem['id']),
@@ -661,8 +661,8 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->submitForm(NULL, [$this->getPriceFieldFormLabel('ten_euros') => $this->ids['PriceFieldValue']['ten_euros']]);
 
     $lineItem = $this->getLineItemForPriceFieldValue($this->ids['PriceFieldValue']['discount_five_euros']);
-    $this->assertEquals(0.0, (float) $lineItem['qty']);
-    $this->assertEquals(0.0, (float) $lineItem['line_total']);
+    $this->assertSame(0.0, (float) $lineItem['qty']);
+    $this->assertSame(0.0, (float) $lineItem['line_total']);
     $this->assertEquals(
       [-5.00, 5.00],
       $this->getFinancialItemAmountsForLineItem($lineItem['id']),
@@ -680,7 +680,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
    */
   public function testOmittedTaxedLineItemReversesBothItems(): void {
     $this->enableTaxAndInvoicing();
-    $this->addTaxAccountToFinancialType((int) CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'financial_type_id', 'Event Fee'));
+    $this->addTaxAccountToFinancialType($this->getFinancialTypeID('Event Fee'));
     $this->createPriceField('ten_euros', 'Ten euros', 10.00);
     $this->createPriceField('thirty_five_euros', 'Thirty-five euros', 35.00);
     $this->registerAndPayForPriceFieldValues(['ten_euros', 'thirty_five_euros'], 49.50);
@@ -688,8 +688,8 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     $this->submitForm(NULL, [$this->getPriceFieldFormLabel('thirty_five_euros') => $this->ids['PriceFieldValue']['thirty_five_euros']]);
 
     $lineItem = $this->getLineItemForPriceFieldValue($this->ids['PriceFieldValue']['ten_euros']);
-    $this->assertEquals(0.0, (float) $lineItem['qty']);
-    $this->assertEquals(0.0, (float) $lineItem['line_total']);
+    $this->assertSame(0.0, (float) $lineItem['qty']);
+    $this->assertSame(0.0, (float) $lineItem['line_total']);
     $this->assertEquals(
       [-10.00, -1.00, 1.00, 10.00],
       $this->getFinancialItemAmountsForLineItem($lineItem['id']),
@@ -730,13 +730,40 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
       ->addWhere('id', '=', $this->ids['Contribution']['order'])
       ->addSelect('total_amount')
       ->execute()->single();
-    $this->assertEquals(85.00, (float) $contribution['total_amount'], 'The swap should not change what is owed.');
+    $this->assertSame(85.00, (float) $contribution['total_amount'], 'The swap should not change what is owed.');
 
     $this->assertEquals(
       [85.00],
       $this->getContributionPaymentAmounts($this->ids['Contribution']['order']),
       'The contribution should still carry exactly its original payment, with no reversal.'
     );
+  }
+
+  /**
+   * Swapping an option for an equal-priced one leaves the balance unchanged,
+   * so the processing fee recorded on the contribution must stay.
+   */
+  public function testSwappingEqualPricedOptionKeepsTheProcessingFee(): void {
+    $this->createPriceField('fifty_euros', 'Fifty euros', 50.00);
+    $this->createPriceField('thirty_five_euros', 'Thirty-five euros', 35.00);
+    $this->createPriceField('fifty_euros_again', 'Fifty euros again', 50.00);
+    $this->registerAndPayForPriceFieldValues(['fifty_euros', 'thirty_five_euros'], 85.00);
+    Contribution::update(FALSE)
+      ->addWhere('id', '=', $this->ids['Contribution']['order'])
+      ->addValue('fee_amount', 3.00)
+      ->addValue('net_amount', 82.00)
+      ->execute();
+
+    $this->submitForm(NULL, [
+      $this->getPriceFieldFormLabel('fifty_euros_again') => $this->ids['PriceFieldValue']['fifty_euros_again'],
+      $this->getPriceFieldFormLabel('thirty_five_euros') => $this->ids['PriceFieldValue']['thirty_five_euros'],
+    ]);
+
+    $contribution = Contribution::get(FALSE)
+      ->addWhere('id', '=', $this->ids['Contribution']['order'])
+      ->addSelect('total_amount', 'fee_amount', 'net_amount')
+      ->execute()->single();
+    $this->assertEquals([85.00, 3.00, 82.00], [(float) $contribution['total_amount'], (float) $contribution['fee_amount'], (float) $contribution['net_amount']]);
   }
 
   /**
@@ -799,7 +826,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     // Change participant A's fee only.
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
       $this->getPriceFieldFormLabel('PaidEvent') => $this->getVeryExpensiveID(),
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+      'status_id' => $this->getParticipantStatusID('Registered'),
     ], [
       'id' => $participantA['id'],
       'action' => CRM_Core_Action::UPDATE,
@@ -872,7 +899,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     // Change participant A onto the SAME option participant B already holds.
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
       $this->getPriceFieldFormLabel('PaidEvent') => $this->getCheapFeeID(),
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+      'status_id' => $this->getParticipantStatusID('Registered'),
     ], [
       'id' => $participantA['id'],
       'action' => CRM_Core_Action::UPDATE,
@@ -1002,7 +1029,7 @@ class CRM_Event_BAO_ChangeFeeSelectionTest extends CiviUnitTestCase {
     // participant B's unrelated pair above.
     $this->getTestForm('CRM_Event_Form_ParticipantFeeSelection', [
       $this->getPriceFieldFormLabel('PaidEvent') => $this->getExpensiveValueID(),
-      'status_id' => CRM_Core_PseudoConstant::getKey('CRM_Event_BAO_Participant', 'status_id', 'Registered'),
+      'status_id' => $this->getParticipantStatusID('Registered'),
     ], [
       'id' => $participantA['id'],
       'action' => CRM_Core_Action::UPDATE,

@@ -77,8 +77,8 @@
         // FIXME: Additional hack to directly update tabHeader for contact summary tab. It would be better to
         // decouple the contactTab code into a separate directive that checks totalCount.
         let contactTab = $element.closest('.crm-contact-page .ui-tabs-panel').attr('id');
-        // Only the first display in a tab gets to control the count
-        if (contactTab && !$element.is($('#' + contactTab + ' [search][display]').first())) {
+        // Only the first display in a tab gets to control the count, and only if counts are not disabled
+        if (contactTab && (!$element.is($('#' + contactTab + ' [search][display]').first()) || CRM.tabHeader?.hasCount?.(contactTab.replace('contact-', '#tab_')) === false)) {
           contactTab = null;
         }
         let hasCounter = !isSubsearch && (contactTab || ctrl.hasOwnProperty('totalCount'));
@@ -259,6 +259,13 @@
         return $sce.trustAsHtml(html);
       },
 
+      // Name of the Afform this display is embedded in, which lets SearchDisplay.run
+      // apply the form's filters and permissions (including its secret-link token).
+      // A display placed directly in a submission form has no afFieldset, so fall back to the afForm.
+      getAfformName() {
+        return this.afFieldset?.getFormName() ?? this.$element?.controller('afForm')?.getFormMeta().name ?? null;
+      },
+
       // Generate params for the SearchDisplay.run api
       getApiParams: function(mode) {
         const apiParams = {
@@ -269,7 +276,7 @@
           limit: this.limit,
           seed: this.uniqueId,
           filters: this.getFilters(),
-          afform: this.afFieldset ? this.afFieldset.getFormName() : null
+          afform: this.getAfformName()
         };
         // Add toggleColumns if any columns are disabled
         const toggleColumns = this.columns.reduce((indices, col, index) => {

@@ -1,12 +1,14 @@
 <?php
+use Civi\Core\Attribute\CiviEventListener;
+
 /*
- +--------------------------------------------------------------------+
- | Copyright CiviCRM LLC. All rights reserved.                        |
- |                                                                    |
- | This work is published under the GNU AGPLv3 license with some      |
- | permitted exceptions and without any warranty. For full license    |
- | and copyright information, see https://civicrm.org/licensing       |
- +--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+| Copyright CiviCRM LLC. All rights reserved.                        |
+|                                                                    |
+| This work is published under the GNU AGPLv3 license with some      |
+| permitted exceptions and without any warranty. For full license    |
+| and copyright information, see https://civicrm.org/licensing       |
++--------------------------------------------------------------------+
  */
 
 /**
@@ -18,7 +20,7 @@
 /**
  * UF group BAO class.
  */
-class CRM_Core_BAO_UFGroup extends CRM_Core_DAO_UFGroup implements \Civi\Core\HookInterface {
+class CRM_Core_BAO_UFGroup extends CRM_Core_DAO_UFGroup {
 
   const PUBLIC_VISIBILITY = 1,
     ADMIN_VISIBILITY = 2,
@@ -1354,6 +1356,7 @@ class CRM_Core_BAO_UFGroup extends CRM_Core_DAO_UFGroup implements \Civi\Core\Ho
    * @param \Civi\Core\Event\PreEvent $event
    * @throws CRM_Core_Exception
    */
+  #[CiviEventListener(event: 'hook_civicrm_pre::{self}')]
   public static function self_hook_civicrm_pre(\Civi\Core\Event\PreEvent $event) {
     if ($event->action === 'delete' && $event->id) {
       // Check whether this group contains any profile fields
@@ -1377,6 +1380,7 @@ class CRM_Core_BAO_UFGroup extends CRM_Core_DAO_UFGroup implements \Civi\Core\Ho
    * @param \Civi\Core\Event\PostEvent $event
    * @throws CRM_Core_Exception
    */
+  #[CiviEventListener(event: 'hook_civicrm_post::{self}')]
   public static function self_hook_civicrm_post(\Civi\Core\Event\PostEvent $event) {
     Civi::cache('metadata')->clear();
   }
@@ -1890,7 +1894,7 @@ AND    ( entity_id IS NULL OR entity_id <= 0 )
       ], $required);
     }
     elseif ($fieldName === 'contact_sub_type') {
-      $gId = $form->get('gid') ?:  $field['group_id'] ?? NULL;
+      $gId = $form->get('gid') ?: $field['group_id'] ?? NULL;
       if ($usedFor == 'onbehalf') {
         $profileType = 'Organization';
       }
@@ -1932,7 +1936,7 @@ AND    ( entity_id IS NULL OR entity_id <= 0 )
     }
     elseif (in_array($fieldName, CRM_Contact_BAO_Contact::$_greetingTypes)) {
       // Get contact type for greeting selector
-      $gId = $form->get('gid') ?:  $field['group_id'] ?? NULL;
+      $gId = $form->get('gid') ?: $field['group_id'] ?? NULL;
       $profileType = CRM_Core_BAO_UFField::getProfileType($gId, TRUE, FALSE, TRUE);
 
       if (!$profileType || in_array($profileType, ['Contact', 'Contribution', 'Participant', 'Membership'])) {
@@ -3294,8 +3298,7 @@ SELECT  group_id
       }
     }
 
-    //since we don't have names, compare w/ label.
-    $mailingListGroupType = array_search('Mailing List', CRM_Core_OptionGroup::values('group_type'));
+    $mailingListGroupType = (string) CRM_Core_PseudoConstant::getKey('CRM_Contact_BAO_Group', 'group_type', 'Mailing List');
 
     //actual processing start.
     foreach ($params['group'] as $groupId => $isSelected) {
@@ -3309,7 +3312,7 @@ SELECT  group_id
         CRM_Core_DAO::getFieldValue('CRM_Contact_DAO_Group', $groupId, 'group_type', 'id')
       );
       //get only mailing type group and unset it from params
-      if (in_array($mailingListGroupType, $groupTypes) && !in_array($groupId, $contactGroups)) {
+      if (in_array($mailingListGroupType, $groupTypes, TRUE) && !in_array($groupId, $contactGroups)) {
         $subscribeGroupIds[$groupId] = $groupId;
         unset($params['group'][$groupId]);
       }

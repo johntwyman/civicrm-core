@@ -51,7 +51,7 @@ class CRM_Core_Smarty extends CRM_Core_SmartyCompatibility {
    *
    * @var object
    */
-  static private $_singleton = NULL;
+  private static $_singleton = NULL;
 
   /**
    * Backup frames.
@@ -327,15 +327,11 @@ class CRM_Core_Smarty extends CRM_Core_SmartyCompatibility {
   public function fetchWith($resource_name, $vars) {
     $this->pushScope($vars);
     try {
-      $result = $this->fetch($resource_name);
+      return $this->fetch($resource_name);
     }
-    catch (Exception $e) {
-      // simulate try { ... } finally { ... }
+    finally {
       $this->popScope();
-      throw $e;
     }
-    $this->popScope();
-    return $result;
   }
 
   /**

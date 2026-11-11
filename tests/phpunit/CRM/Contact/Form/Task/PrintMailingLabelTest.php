@@ -76,7 +76,7 @@ class CRM_Contact_Form_Task_PrintMailingLabelTest extends CiviUnitTestCase {
     // No merge handling is done on the token - this test was added to lock
     // in token merge handling as at the time of writing, not to weigh in on
     // or change behaviour.
-    $this->assertEquals('Mr. Anthony J. Collins II
+    $this->assertSame('Mr. Anthony J. Collins II
 Mr. Antonia J. D`souza II
 Main Street 231
 Brummen, 6971 BN
@@ -90,7 +90,7 @@ NETHERLANDS S', $rows[$this->ids['Contact']['collins']][0]);
     \Civi::settings()->set('mailing_format', $this->getDefaultMailingFormat());
     $this->createTestAddresses();
     $rows = $this->submitForm([
-      'location_type_id' => CRM_Core_PseudoConstant::getKey('CRM_Core_BAO_Address', 'location_type_id', 'Work'),
+      'location_type_id' => $this->getLocationTypeID('Work'),
     ]);
     // Check that the non-primary phone has been appended - ie the one with 0 for non-primary at the end.
     $this->assertEquals($this->getExpectedAddress('souza', FALSE), $rows[$this->ids['Contact']['souza']][0]);
@@ -145,12 +145,12 @@ NETHERLANDS S', $rows[$this->ids['Contact']['collins']][0]);
     $this->createTestAddresses();
 
     $pdf = $this->submitFormGetPdf([]);
-    $this->assertEquals(0, $pdf->countX);
-    $this->assertEquals(2, $pdf->countY);
+    $this->assertSame(0, $pdf->countX);
+    $this->assertSame(2, $pdf->countY);
 
     $pdf = $this->submitFormGetPdf(['fill_across' => 1]);
-    $this->assertEquals(2, $pdf->countX);
-    $this->assertEquals(0, $pdf->countY);
+    $this->assertSame(2, $pdf->countX);
+    $this->assertSame(0, $pdf->countY);
   }
 
   /**

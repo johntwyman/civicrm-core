@@ -1,12 +1,13 @@
 <?php
+use Civi\Core\Attribute\CiviEventListener;
 /*
- +--------------------------------------------------------------------+
- | Copyright CiviCRM LLC. All rights reserved.                        |
- |                                                                    |
- | This work is published under the GNU AGPLv3 license with some      |
- | permitted exceptions and without any warranty. For full license    |
- | and copyright information, see https://civicrm.org/licensing       |
- +--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+| Copyright CiviCRM LLC. All rights reserved.                        |
+|                                                                    |
+| This work is published under the GNU AGPLv3 license with some      |
+| permitted exceptions and without any warranty. For full license    |
+| and copyright information, see https://civicrm.org/licensing       |
++--------------------------------------------------------------------+
  */
 
 use Civi\Api4\Activity;
@@ -28,7 +29,7 @@ use Civi\Order\Event\OrderCompleteEvent;
  * @package CRM
  * @copyright CiviCRM LLC https://civicrm.org/licensing
  */
-class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution implements Civi\Core\HookInterface {
+class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution {
 
   /**
    * Static field for all the contribution information that we can potentially import
@@ -170,7 +171,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
     }
 
     if ($contributionID && !empty($params['revenue_recognition_date'])
-      && !($previousContributionStatus === 'Pending')
+      && !in_array($previousContributionStatus, ['Pending', 'In Progress'], TRUE)
       && !self::allowUpdateRevenueRecognitionDate($contributionID)
     ) {
       unset($params['revenue_recognition_date']);
@@ -378,7 +379,12 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
     if (empty($params['contribution_recur_id']) && empty($params['prevContribution']->contribution_recur_id)) {
       return FALSE;
     }
-    if ($params['prevContribution']->contribution_status_id == CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending')) {
+    $previousStatus = CRM_Core_PseudoConstant::getName(
+      'CRM_Contribute_BAO_Contribution',
+      'contribution_status_id',
+      (int) $params['prevContribution']->contribution_status_id
+    );
+    if (in_array($previousStatus, ['Pending', 'In Progress'], TRUE)) {
       return TRUE;
     }
     return FALSE;
@@ -572,7 +578,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
     try {
       $contribution = self::add($params);
     }
-    catch (CRM_Core_Exception $e) {
+    catch (\Throwable $e) {
       $transaction->rollback();
       throw $e;
     }
@@ -645,7 +651,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
       );
 
       $financialType = CRM_Contribute_PseudoConstant::financialType($contribution->financial_type_id);
-      $title = CRM_Contact_BAO_Contact::displayName($contribution->contact_id) . ' - (' . CRM_Utils_Money::format($contribution->total_amount, $contribution->currency) . ' ' . ' - ' . $financialType . ')';
+      $title = CRM_Contact_BAO_Contact::displayName($contribution->contact_id) . ' - (' . CRM_Utils_Money::format($contribution->total_amount, $contribution->currency) . '  - ' . $financialType . ')';
 
       $recentOther = [];
       if (CRM_Core_Permission::checkActionPermission('CiviContribute', CRM_Core_Action::UPDATE)) {
@@ -681,6 +687,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
    *
    * @throws \CRM_Core_Exception
    */
+  #[CiviEventListener(event: 'hook_civicrm_pre::{self}')]
   public static function self_hook_civicrm_pre(PreEvent $event): void {
     if ($event->action === 'create') {
 
@@ -715,6 +722,7 @@ class CRM_Contribute_BAO_Contribution extends CRM_Contribute_DAO_Contribution im
    *
    * @throws \CRM_Core_Exception
    */
+  #[CiviEventListener(event: 'hook_civicrm_post::{self}')]
   public static function self_hook_civicrm_post(PostEvent $event): void {
     if ($event->action === 'edit') {
       CRM_Contribute_BAO_ContributionRecur::updateOnTemplateUpdated($event->object);
@@ -2417,7 +2425,7 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
     $checkStatus = [
       'Cancelled' => ['Completed', 'Refunded'],
       'Completed' => ['Cancelled', 'Refunded', 'Chargeback', 'Partially paid', 'Pending refund'],
-      'Pending' => ['Cancelled', 'Completed', 'Failed', 'Partially paid'],
+      'Pending' => ['Cancelled', 'Completed', 'Failed', 'In Progress', 'Partially paid'],
       'In Progress' => ['Cancelled', 'Completed', 'Failed'],
       'Refunded' => ['Cancelled', 'Completed'],
       'Partially paid' => ['Completed', 'Refunded'],
@@ -2911,7 +2919,7 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
         civicrm_api3('Contribution', 'sendconfirmation', $sendConfirmationParams);
         \Civi::log()->info("Contribution {$contributionID} Receipt sent");
       }
-      catch (Exception $e) {
+      catch (Throwable $e) {
         \Civi::log()->warning("Contribution {$contributionID} Failed to send receipt: " . $e->getMessage());
       }
     }
@@ -3146,7 +3154,7 @@ INNER JOIN civicrm_activity ON civicrm_activity_contact.activity_id = civicrm_ac
         'weight' => 0,
       ];
     }
-    if ($contributionStatus !== 'Pending' && CRM_Core_Permission::check('refund contributions')) {
+    if (!in_array($contributionStatus, ['Pending', 'In Progress'], TRUE) && CRM_Core_Permission::check('refund contributions')) {
       $actionLinks[] = [
         'url' => 'civicrm/payment',
         'title' => ts('Record Refund'),

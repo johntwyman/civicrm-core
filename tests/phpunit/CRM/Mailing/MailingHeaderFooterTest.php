@@ -99,7 +99,7 @@ class CRM_Mailing_MailingHeaderFooterTest extends CiviUnitTestCase {
       'name' => 'CiviTestSMSProvider',
       'api_type' => 1,
       'username' => 1,
-      'password' => 1,
+      'password' => '1',
       'api_url' => 1,
       'api_params' => 'a=1',
       'is_default' => 1,
@@ -118,8 +118,8 @@ class CRM_Mailing_MailingHeaderFooterTest extends CiviUnitTestCase {
       'sms_provider_id' => $smsProvider,
     ]);
 
-    $this->assertEquals($mailing['values'][0]['header_id'], NULL);
-    $this->assertEquals($mailing['values'][0]['footer_id'], NULL);
+    $this->assertSame('', $mailing['values'][0]['header_id']);
+    $this->assertSame('', $mailing['values'][0]['footer_id']);
   }
 
 }

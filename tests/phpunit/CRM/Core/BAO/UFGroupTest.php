@@ -53,7 +53,7 @@ class CRM_Core_BAO_UFGroupTest extends CiviUnitTestCase {
     ]);
     // Assert that pre hook implementation was called.
     $ufGroup = UFGroup::get()->addWhere('title', '=', 'testPreHookIsCalledForCreate')->execute()->first();
-    $this->assertEquals(0, $ufGroup['is_active'], 'Is active should be 0');
+    $this->assertFalse($ufGroup['is_active'], 'Is active should be 0');
   }
 
   /**
@@ -77,7 +77,7 @@ class CRM_Core_BAO_UFGroupTest extends CiviUnitTestCase {
       'level' => 'info',
     ]);
 
-    $this->assertEquals(1, $systemLogCount, 'There should be one system log entry with message "CRM_Core_BAO_UFGroupTest::implementHookPre ' . $ufGroupID . '"');
+    $this->assertSame(1, $systemLogCount, 'There should be one system log entry with message "CRM_Core_BAO_UFGroupTest::implementHookPre ' . $ufGroupID . '"');
   }
 
   /**
@@ -93,8 +93,8 @@ class CRM_Core_BAO_UFGroupTest extends CiviUnitTestCase {
     ]);
 
     // Assert that pre hook implementation was called.
-    $this->assertEquals('testPostHookIsCalledForCreate', $ufGroup['title']);
-    $this->assertEquals(0, $ufGroup['is_active'], 'Is active should be 0');
+    $this->assertSame('testPostHookIsCalledForCreate', $ufGroup['title']);
+    $this->assertFalse($ufGroup['is_active'], 'Is active should be 0');
   }
 
   /**
@@ -118,7 +118,7 @@ class CRM_Core_BAO_UFGroupTest extends CiviUnitTestCase {
       'level' => 'info',
     ]);
 
-    $this->assertEquals(1, $systemLogCount, 'There should be one system log entry with message "CRM_Core_BAO_UFGroupTest::implementHookPost ' . $ufGroupID . '"');
+    $this->assertSame(1, $systemLogCount, 'There should be one system log entry with message "CRM_Core_BAO_UFGroupTest::implementHookPost ' . $ufGroupID . '"');
   }
 
   public function implementHookUFGroupTypes(&$ufGroupTypes): void {
@@ -201,8 +201,8 @@ class CRM_Core_BAO_UFGroupTest extends CiviUnitTestCase {
     $formWrapper->processForm(\Civi\Test\FormWrapper::PREPROCESSED);
     $form = Invasive::get([$formWrapper, 'form']);
     $defaults = $form->setDefaultValues();
-    $this->assertEquals('Profile to Copy (Copy)', $defaults['title']);
-    $this->assertEquals('Profile to Copy Public (Copy)', $defaults['frontend_title']);
+    $this->assertSame('Profile to Copy (Copy)', $defaults['title']);
+    $this->assertSame('Profile to Copy Public (Copy)', $defaults['frontend_title']);
 
     $this->getTestForm('CRM_UF_Form_Group', [
       'title' => 'Profile to Copy (Copy)',
@@ -224,8 +224,45 @@ class CRM_Core_BAO_UFGroupTest extends CiviUnitTestCase {
       ->addWhere('uf_group_id', '=', $copiedProfile['id'])
       ->execute();
     $this->assertCount(1, $copiedFields);
-    $this->assertEquals('first_name', $copiedFields[0]['field_name']);
-    $this->assertEquals('First Name', $copiedFields[0]['label']);
+    $this->assertSame('first_name', $copiedFields[0]['field_name']);
+    $this->assertSame('First Name', $copiedFields[0]['label']);
+  }
+
+  /**
+   * Only mailing list groups go through double opt-in, whatever the group type is labelled.
+   *
+   * @throws \CRM_Core_Exception
+   */
+  public function testDoubleOptInGroupIdsWithRelabelledGroupType(): void {
+    Civi::settings()->set('profile_double_optin', TRUE);
+    $this->relabelMailingListGroupType('Mailingliste');
+    $mailingListType = CRM_Core_PseudoConstant::getKey('CRM_Contact_BAO_Group', 'group_type', 'Mailing List');
+    $mailingListID = $this->groupCreate(['name' => 'mailing_list', 'title' => 'Newsletter', 'group_type' => [$mailingListType]], 'mailing_list');
+    $plainGroupID = $this->groupCreate(['name' => 'plain_group', 'title' => 'Volunteers', 'group_type' => []], 'plain_group');
+
+    $params = ['group' => [$mailingListID => 1, $plainGroupID => 1], 'email-Primary' => 'volunteer@example.org'];
+    $subscribeGroupIDs = CRM_Core_BAO_UFGroup::getDoubleOptInGroupIds($params);
+
+    $this->assertEquals([$mailingListID => $mailingListID], $subscribeGroupIDs);
+    $this->assertEquals([$plainGroupID => 1], $params['group']);
+  }
+
+  /**
+   * @param string $label
+   */
+  private function relabelMailingListGroupType(string $label): void {
+    \Civi\Api4\OptionValue::update(FALSE)
+      ->addWhere('option_group_id:name', '=', 'group_type')
+      ->addWhere('name', '=', 'Mailing List')
+      ->addValue('label', $label)
+      ->execute();
+  }
+
+  protected function tearDown(): void {
+    $this->relabelMailingListGroupType('Mailing List');
+    Civi::settings()->revert('profile_double_optin');
+    $this->quickCleanup(['civicrm_group']);
+    parent::tearDown();
   }
 
 }

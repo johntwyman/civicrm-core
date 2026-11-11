@@ -1,12 +1,14 @@
 <?php
+use Civi\Core\Attribute\CiviEventListener;
+
 /*
- +--------------------------------------------------------------------+
- | Copyright CiviCRM LLC. All rights reserved.                        |
- |                                                                    |
- | This work is published under the GNU AGPLv3 license with some      |
- | permitted exceptions and without any warranty. For full license    |
- | and copyright information, see https://civicrm.org/licensing       |
- +--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+| Copyright CiviCRM LLC. All rights reserved.                        |
+|                                                                    |
+| This work is published under the GNU AGPLv3 license with some      |
+| permitted exceptions and without any warranty. For full license    |
+| and copyright information, see https://civicrm.org/licensing       |
++--------------------------------------------------------------------+
  */
 
 /**
@@ -18,7 +20,7 @@
 /**
  * Batch BAO class.
  */
-class CRM_Batch_BAO_Batch extends CRM_Batch_DAO_Batch implements \Civi\Core\HookInterface {
+class CRM_Batch_BAO_Batch extends CRM_Batch_DAO_Batch {
   use CRM_Core_OwnershipAccessTrait;
 
   protected static function checkOwnerAdminPermission(?int $userID = NULL): bool {
@@ -55,6 +57,7 @@ class CRM_Batch_BAO_Batch extends CRM_Batch_DAO_Batch implements \Civi\Core\Hook
    *
    * @throws \CRM_Core_Exception
    */
+  #[CiviEventListener(event: 'hook_civicrm_pre::{self}')]
   public static function self_hook_civicrm_pre(\Civi\Core\Event\PreEvent $event): void {
     if ($event->action === 'create') {
       // Supply defaults for `title`
@@ -780,8 +783,15 @@ LEFT JOIN civicrm_contribution_soft ON civicrm_contribution_soft.contribution_id
       $from .= " " . implode(" ", $customJoins);
     }
 
-    $whereTables = $query->_whereTables;
-    unset($whereTables['civicrm_contact'], $whereTables['civicrm_contribution']);
+    // Tables the FROM above already joins; joining them again is a SQL error or duplicates rows.
+    $whereTables = array_diff_key($query->_whereTables, array_flip([
+      'civicrm_contact',
+      'civicrm_contribution',
+      'civicrm_contribution_recur',
+      'civicrm_contribution_soft',
+      'civicrm_entity_financial_trxn',
+      'civicrm_financial_trxn',
+    ]));
     $fromExtra = trim(str_replace('FROM civicrm_contact contact_a', '', CRM_Contact_BAO_Query::fromClause($whereTables)));
     if ($fromExtra) {
       $from .= ' ' . $fromExtra;

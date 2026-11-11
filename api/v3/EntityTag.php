@@ -123,7 +123,7 @@ function _civicrm_api3_entity_tag_common($params, $op = 'add') {
   if ($op == 'add') {
     $values['total_count'] = $values['added'] = $values['not_added'] = 0;
     foreach ($tagIDs as $tagID) {
-      list($te, $a, $na) = CRM_Core_BAO_EntityTag::addEntitiesToTag($entityIDs, $tagID, $entityTable, $params['check_permissions'] ?? FALSE);
+      [$te, $a, $na] = CRM_Core_BAO_EntityTag::addEntitiesToTag($entityIDs, $tagID, $entityTable, $params['check_permissions'] ?? FALSE);
       $values['total_count'] += $te;
       $values['added'] += $a;
       $values['not_added'] += $na;
@@ -132,7 +132,7 @@ function _civicrm_api3_entity_tag_common($params, $op = 'add') {
   else {
     $values['total_count'] = $values['removed'] = $values['not_removed'] = 0;
     foreach ($tagIDs as $tagID) {
-      list($te, $r, $nr) = CRM_Core_BAO_EntityTag::removeEntitiesFromTag($entityIDs, $tagID, $entityTable, $params['check_permissions'] ?? FALSE);
+      [$te, $r, $nr] = CRM_Core_BAO_EntityTag::removeEntitiesFromTag($entityIDs, $tagID, $entityTable, $params['check_permissions'] ?? FALSE);
       $values['total_count'] += $te;
       $values['removed'] += $r;
       $values['not_removed'] += $nr;
@@ -173,7 +173,7 @@ function civicrm_api3_entity_tag_replace($params) {
 
     return civicrm_api3_create_success($result, $params, 'EntityTag', 'replace');
   }
-  catch (Exception $e) {
+  catch (Throwable $e) {
     $transaction->rollback();
     return civicrm_api3_create_error($e->getMessage());
   }
