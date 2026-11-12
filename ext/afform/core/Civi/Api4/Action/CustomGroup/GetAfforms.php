@@ -56,6 +56,15 @@ class GetAfforms extends \Civi\Api4\Generic\BasicBatchAction {
   protected function doTask($item) {
     $forms = [];
 
+    // Custom group - extended entity's API is missing when its component is disabled
+    $baseEntity = \CRM_Core_BAO_CustomGroup::getEntityFromExtends($item['extends']);
+    if (!$baseEntity || !CoreUtil::entityExists($baseEntity)) {
+      return [
+        'id' => $item['id'],
+        'forms' => $forms,
+      ];
+    }
+
     // Get all enabled fields
     $customGroup = \CRM_Core_BAO_CustomGroup::getGroup(['id' => $item['id']]);
     $item['fields'] = array_filter($customGroup['fields'], function ($field) {
@@ -90,12 +99,6 @@ class GetAfforms extends \Civi\Api4\Generic\BasicBatchAction {
       if (isset($field['default_value']) && $field['default_value'] !== '') {
         $field['defn']['afform_default'] = $this->getAfformDefault($field, $item);
       }
-    }
-
-    // restrict forms other than block to if Admin UI is enabled
-    $hasAdminUi = \CRM_Extension_System::singleton()->getMapper()->isActiveModule('civicrm_admin_ui');
-    if (!$hasAdminUi) {
-      $this->formTypes = array_intersect(['block'], $this->formTypes);
     }
 
     foreach ($this->formTypes as $type) {
@@ -401,9 +404,7 @@ class GetAfforms extends \Civi\Api4\Generic\BasicBatchAction {
 
     foreach ($forms as $form) {
       $form['has_base'] = TRUE;
-      // blocks are provided by this module, but others are effectively provided
-      // by `civicrm_admin_ui` at this stage
-      $form['base_module'] = ($form['type'] === 'block') ? E::LONG_NAME : 'civicrm_admin_ui';
+      $form['base_module'] = E::LONG_NAME;
       $event->afforms[$form['name']] = $form;
     }
   }
