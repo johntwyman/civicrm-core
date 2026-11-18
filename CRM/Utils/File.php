@@ -578,8 +578,9 @@ class CRM_Utils_File {
 HTACCESS;
       $file = $dir . '.htaccess';
       if ($overwrite || !file_exists($file)) {
-        if (file_put_contents($file, $htaccess) === FALSE) {
-          CRM_Core_Error::movedSiteError($file);
+        $writeResult = file_put_contents($file, $htaccess);
+        if ($writeResult === FALSE) {
+          throw new \CRM_Core_Exception("Error writing {$file}");
         }
       }
     }
@@ -1132,13 +1133,15 @@ HTACCESS;
   }
 
   /**
-   * Get the extensions that this MimeTpe is for
-   * @param string $mimeType the mime-type we want extensions for
+   * Get the extensions that this MimeType is for
+   * @param string|null $mimeType the mime-type we want extensions for
    * @return array
    */
-  public static function getAcceptableExtensionsForMimeType($mimeType = []) {
-    $mimeRepostory = new \MimeTyper\Repository\ExtendedRepository();
-    return $mimeRepostory->findExtensions($mimeType);
+  public static function getAcceptableExtensionsForMimeType(?string $mimeType = NULL): array {
+    if (!$mimeType) {
+      return [];
+    }
+    return \Symfony\Component\Mime\MimeTypes::getDefault()->getExtensions($mimeType);
   }
 
   /**

@@ -455,7 +455,7 @@ class CRM_Core_Error extends PEAR_ErrorStack {
     // Case C: Default error handler
 
     // log to file
-    CRM_Core_Error::debug_var('Fatal Error Details', $vars, FALSE, TRUE, '', PEAR_LOG_ERR);
+    self::debug_log_message('Fatal Error Details: ' . $vars['message'] . "\n" . self::formatter('text')->formatException($exception), FALSE, '', PEAR_LOG_ERR);
     CRM_Core_Error::backtrace('backTrace', TRUE);
 
     // print to screen
@@ -549,9 +549,9 @@ class CRM_Core_Error extends PEAR_ErrorStack {
    * @param mixed $variable
    *   Variable value.
    * @param bool $print
-   *   Use print_r (if true) or var_dump (if false).
+   *   Unused param.
    * @param bool $log
-   *   Log or return the output?
+   *   Unused param.
    * @param string $prefix
    *   Prefix for output logfile.
    * @param int $priority
@@ -560,8 +560,7 @@ class CRM_Core_Error extends PEAR_ErrorStack {
    * @return string
    *   The generated output
    *
-   * @see CRM_Core_Error::debug()
-   * @see CRM_Core_Error::debug_log_message()
+   * @deprecated prefer Civi::log().
    */
   public static function debug_var($variable_name, $variable, $print = TRUE, $log = TRUE, $prefix = '', $priority = NULL) {
     // check if variable is set
@@ -569,21 +568,8 @@ class CRM_Core_Error extends PEAR_ErrorStack {
       $out = "\$$variable_name is not set";
     }
     else {
-      if ($print) {
-        $out = print_r($variable, TRUE);
-        $out = "\$$variable_name = $out";
-      }
-      else {
-        // Use Symfony var-dumper to avoid circular references that exhaust
-        // memory when using var_dump().
-        // Use its CliDumper since if we use the simpler `dump()` then it
-        // comes out as some overly decorated html which is hard to read.
-        $dump = (new \Symfony\Component\VarDumper\Dumper\CliDumper('php://output'))
-          ->dump(
-            (new \Symfony\Component\VarDumper\Cloner\VarCloner())->cloneVar($variable),
-            TRUE);
-        $out = "\n\$$variable_name = $dump";
-      }
+      $out = print_r($variable, TRUE);
+      $out = "\$$variable_name = $out";
       // reset if it is an array
       if (is_array($variable)) {
         reset($variable);
@@ -968,19 +954,6 @@ class CRM_Core_Error extends PEAR_ErrorStack {
   }
 
   /**
-   * @param $file
-   */
-  public static function movedSiteError($file) {
-    $url = CRM_Utils_System::url('civicrm/admin/setting/updateConfigBackend',
-      'reset=1',
-      TRUE
-    );
-    echo "We could not write $file. Have you moved your site directory or server?<p>";
-    echo "Please fix the setting by running the <a href=\"$url\">update config script</a>";
-    exit();
-  }
-
-  /**
    * Terminate execution abnormally.
    *
    * @param int $code
@@ -1049,7 +1022,7 @@ class CRM_Core_Error extends PEAR_ErrorStack {
    * @param string|null $oldMethod
    *   optional description of old method (if not the calling method). eg. CRM_MyClass::myOldMethodToGetTheOptions()
    */
-  public static function deprecatedFunctionWarning(?string $newMethod, ?string $oldMethod = NULL): void {
+  public static function deprecatedFunctionWarning(?string $newMethod = NULL, ?string $oldMethod = NULL): void {
     $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
     if (!$oldMethod) {
       $callerFunction = $backtrace[1]['function'] ?? NULL;

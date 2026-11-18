@@ -14,6 +14,7 @@ namespace Civi\Api4\Utils;
 
 use Civi\Api4\Query\Api4Query;
 use Civi\Api4\Query\SqlExpression;
+use Civi\Api4\Query\SqlFunction;
 
 require_once 'api/v3/utils.php';
 
@@ -36,6 +37,10 @@ class FormattingUtil {
    * @throws \CRM_Core_Exception
    */
   public static function formatWriteParams(&$params, $fields) {
+    // An empty 'id' param is not valid
+    if (array_key_exists('id', $params) && \CRM_Utils_System::isNull($params['id'])) {
+      unset($params['id']);
+    }
     foreach ($fields as $name => $field) {
       if (!empty($params[$name])) {
         $value =& $params[$name];
@@ -288,6 +293,8 @@ class FormattingUtil {
         'suffix' => self::getSuffix($fieldName),
         'dataType' => $field['data_type'] ?? ($fieldName == 'id' ? 'Integer' : NULL),
         'isContactType' => ($field['entity'] ?? NULL) === 'Contact' && ($field['name'] ?? NULL) === 'contact_type',
+        // For lists, return NULL for items without :label etc, so the list stays aligned with other aggregated columns
+        'keepPositions' => empty($field['serialize']) && $fieldExpr instanceof SqlFunction && $fieldExpr::getCategory() === SqlFunction::CATEGORY_AGGREGATE,
       ];
     };
 
@@ -344,7 +351,7 @@ class FormattingUtil {
             $value = \CRM_Core_DAO::unSerializeField($value, $field['serialize']);
           }
           if (isset($fieldOptions)) {
-            $value = self::replacePseudoconstant($fieldOptions, $value);
+            $value = self::replacePseudoconstant($fieldOptions, $value, keepPositions: $columnMeta[$key]['keepPositions']);
           }
         }
         $result[$key] = self::convertDataType($value, $dataType);
@@ -394,10 +401,12 @@ class FormattingUtil {
    * @param array $values
    *   Other values for this object
    * @param string $action
+   * @param bool $includeDisabled
+   *   FALSE leaves out disabled options and applies the limits a site sets on a list.
    * @return array
    * @throws \CRM_Core_Exception
    */
-  public static function getPseudoconstantList(array $field, string $fieldAlias, $values = [], $action = 'get') {
+  public static function getPseudoconstantList(array $field, string $fieldAlias, $values = [], $action = 'get', bool $includeDisabled = TRUE) {
     $valueType = self::getSuffix($fieldAlias);
     // For create actions, only unique identifiers can be used.
     // For get actions any valid suffix is ok.
@@ -413,7 +422,7 @@ class FormattingUtil {
 
     $entityValues = self::filterByPath($values, $fieldPath, $field['name']);
     try {
-      $options = self::getFieldOptions($field, $entityValues, TRUE);
+      $options = self::getFieldOptions($field, $entityValues, $includeDisabled);
     }
     catch (\CRM_Core_Exception $e) {
       // Entity not in Civi (api-only) will use fallback below
@@ -463,9 +472,12 @@ class FormattingUtil {
    * @param string|string[] $value
    * @param bool $reverse
    *   Is this a reverse lookup (for transforming input instead of output)
+   * @param bool $keepPositions
+   *   Return NULL for unmatched values instead of dropping them, so an aggregated
+   *   list stays index-aligned with other aggregates from the same rows.
    * @return array|mixed|null
    */
-  public static function replacePseudoconstant($options, $value, $reverse = FALSE) {
+  public static function replacePseudoconstant($options, $value, $reverse = FALSE, bool $keepPositions = FALSE) {
     $matches = [];
     foreach ((array) $value as $val) {
       if (!$reverse && isset($options[$val])) {
@@ -473,6 +485,9 @@ class FormattingUtil {
       }
       elseif ($reverse && array_search($val, $options) !== FALSE) {
         $matches[] = array_search($val, $options);
+      }
+      elseif ($keepPositions) {
+        $matches[] = NULL;
       }
     }
     return is_array($value) ? $matches : $matches[0] ?? NULL;
@@ -491,7 +506,7 @@ class FormattingUtil {
     $row = self::filterByPath($result, $fieldPath, $fieldDefn['name']);
 
     // For aggregated array data, apply the formatter to each item
-    if (is_array($value) && $fieldExpr->getType() === 'SqlFunction' && $fieldExpr::getCategory() === 'aggregate') {
+    if (is_array($value) && $fieldExpr instanceof SqlFunction && $fieldExpr::getCategory() === SqlFunction::CATEGORY_AGGREGATE) {
       foreach ($value as $index => &$val) {
         $subRow = $row;
         foreach ($row as $rowKey => $rowValue) {

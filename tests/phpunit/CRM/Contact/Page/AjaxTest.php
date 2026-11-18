@@ -1,5 +1,9 @@
 <?php
 
+use Civi\Api4\Contact;
+use Civi\Api4\DedupeException;
+use Civi\Api4\Tag;
+
 /**
  * @group headless
  */
@@ -137,9 +141,9 @@ class CRM_Contact_Page_AjaxTest extends CiviUnitTestCase {
     $contact3 = $this->individualCreate();
     CRM_Contact_Page_AJAX::markNonDuplicates($contact1, $contact2, 'dupe-nondupe');
     CRM_Contact_Page_AJAX::markNonDuplicates($contact3, $contact1, 'dupe-nondupe');
-    $this->callAPISuccessGetSingle('Exception', ['contact_id1' => $contact1, 'contact_id2' => $contact2]);
+    DedupeException::get(FALSE)->addWhere('contact_id1', '=', $contact1)->addWhere('contact_id2', '=', $contact2)->execute()->single();
     // Note that in saving the order is changed to have the lowest ID first.
-    $this->callAPISuccessGetSingle('Exception', ['contact_id1' => $contact1, 'contact_id2' => $contact3]);
+    DedupeException::get(FALSE)->addWhere('contact_id1', '=', $contact1)->addWhere('contact_id2', '=', $contact3)->execute()->single();
   }
 
   public function testGetDedupesPostCode(): void {
@@ -410,12 +414,10 @@ class CRM_Contact_Page_AjaxTest extends CiviUnitTestCase {
     $this->checkArrayEquals($tagIDs, $expectedTagIDs);
 
     //cleanup
-    foreach ($contacts as $id) {
-      $this->callAPISuccess('Contact', 'delete', ['id' => $id]);
+    Contact::delete(FALSE)->addWhere('id', 'IN', $contacts)->execute();
+    foreach ([$childTag2, $childTag1, $parentTag] as $tag) {
+      Tag::delete(FALSE)->addWhere('id', '=', $tag['id'])->execute();
     }
-    $this->callAPISuccess('Tag', 'delete', ['id' => $childTag2['id']]);
-    $this->callAPISuccess('Tag', 'delete', ['id' => $childTag1['id']]);
-    $this->callAPISuccess('Tag', 'delete', ['id' => $parentTag['id']]);
   }
 
   /**
@@ -438,7 +440,7 @@ class CRM_Contact_Page_AjaxTest extends CiviUnitTestCase {
       $this->groupContactCreate($groupId);
       $contactIds = array_merge($contactIds, CRM_Contact_BAO_Group::getGroupContacts($groupId));
     }
-    $contactIds = CRM_Utils_Array::collect('contact_id', $contactIds);
+    $contactIds = array_column($contactIds, 'contact_id');
 
     // create custom group with contact reference field
     $customGroup = $this->customGroupCreate(['extends' => 'Contact', 'title' => 'select_test_group']);
@@ -451,17 +453,17 @@ class CRM_Contact_Page_AjaxTest extends CiviUnitTestCase {
       'html_type' => 'Autocomplete-Select',
       'data_type' => 'ContactReference',
       'weight' => 4,
-      'is_searchable' => 1,
-      'is_active' => 1,
+      'is_searchable' => TRUE,
+      'is_active' => TRUE,
     ];
-    $customField = $this->callAPISuccess('custom_field', 'create', $params);
+    $customField = $this->createTestEntity('CustomField', $params);
 
     $_GET = [
       'id' => $customField['id'],
       'is_unit_test' => TRUE,
     ];
     $contactList = CRM_Contact_Page_AJAX::contactReference();
-    $contactList = CRM_Utils_Array::collect('id', $contactList);
+    $contactList = array_column($contactList, 'id');
 
     //assert each returned contact id to be present in group contact
     foreach ($contactList as $contactId) {

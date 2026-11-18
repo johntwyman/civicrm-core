@@ -1,5 +1,7 @@
 <?php
 
+use Civi\Api4\OptionValue;
+
 /**
  * Class CRM_Utils_FileTest
  * @group headless
@@ -7,7 +9,10 @@
 class CRM_Utils_FileTest extends CiviUnitTestCase {
 
   public function tearDown(): void {
-    $this->callAPISuccess('OptionValue', 'get', ['option_group_id' => 'safe_file_extension', 'value' => 17, 'api.option_value.delete' => ['id' => "\$value.id"]]);
+    OptionValue::delete(FALSE)
+      ->addWhere('option_group_id:name', '=', 'safe_file_extension')
+      ->addWhere('value', '=', 17)
+      ->execute();
     parent::tearDown();
   }
 
@@ -183,19 +188,19 @@ class CRM_Utils_FileTest extends CiviUnitTestCase {
 
   public static function mimeTypeToExtension() {
     $cases = [];
-    $cases[] = ['text/plain', ['txt', 'text', 'conf', 'def', 'list', 'log', 'in', 'ini']];
-    $cases[] = ['image/jpeg', ['jpeg', 'jpg', 'jpe']];
+    $cases[] = ['text/plain', ['txt', 'text', 'conf', 'def', 'list', 'log', 'in', 'ini', 'asc']];
+    $cases[] = ['image/jpeg', ['jpeg', 'jpg', 'jpe', 'jfif']];
     $cases[] = ['image/png', ['png']];
     return $cases;
   }
 
   /**
    * @dataProvider mimeTypeToExtension
-   * @param stirng $mimeType
+   * @param string $mimeType
    * @param array $expectedExtensions
    */
   public function testMimeTypeToExtension($mimeType, $expectedExtensions) {
-    $this->assertEquals($expectedExtensions, CRM_Utils_File::getAcceptableExtensionsForMimeType($mimeType));
+    $this->assertEqualsCanonicalizing($expectedExtensions, CRM_Utils_File::getAcceptableExtensionsForMimeType($mimeType));
   }
 
   /**
@@ -718,15 +723,15 @@ class CRM_Utils_FileTest extends CiviUnitTestCase {
    * @dataProvider safeFileExtensionExamples
    */
   public function testSafeFileExtensionValidation($extension, $standardInstallCheck, $afterModificationCheck): void {
-    $this->assertEquals($standardInstallCheck, CRM_Utils_File::isExtensionSafe($extension));
-    $optionValue = $this->callAPISuccess('OptionValue', 'create', [
-      'option_group_id' => 'safe_file_extension',
+    $this->assertSame($standardInstallCheck, CRM_Utils_File::isExtensionSafe($extension));
+    $this->createTestEntity('OptionValue', [
+      'option_group_id:name' => 'safe_file_extension',
       'label' => $extension,
       'name' => $extension,
       'value' => 17,
     ]);
     unset(Civi::$statics['CRM_Utils_File']['file_extensions']);
-    $this->assertEquals($standardInstallCheck, CRM_Utils_File::isExtensionSafe($extension));
+    $this->assertSame($afterModificationCheck, CRM_Utils_File::isExtensionSafe($extension));
   }
 
   public function testCleanDir(): void {

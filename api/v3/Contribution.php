@@ -230,10 +230,8 @@ function civicrm_api3_contribution_delete($params) {
   if (!empty($params['check_permissions']) && !\Civi\Api4\Utils\CoreUtil::checkAccessDelegated('Contribution', 'delete', ['id' => $contributionID], CRM_Core_Session::getLoggedInContactID() ?: 0)) {
     throw new CRM_Core_Exception('You do not have permission to delete this contribution');
   }
-  if (CRM_Contribute_BAO_Contribution::deleteContribution($contributionID)) {
-    return civicrm_api3_create_success([$contributionID => 1]);
-  }
-  throw new CRM_Core_Exception('Could not delete contribution');
+  CRM_Contribute_BAO_Contribution::deleteRecord(['id' => $contributionID]);
+  return civicrm_api3_create_success([$contributionID => 1]);
 }
 
 /**
@@ -481,8 +479,7 @@ function _civicrm_api3_contribution_sendconfirmation_spec(&$params) {
  * This will update related entities (participant, membership, pledge etc)
  * and take any complete actions from the contribution page (e.g. send receipt).
  *
- * @todo - most of this should live in the BAO layer but as we want it to be an addition
- * to 4.3 which is already stable we should add it to the api layer & re-factor into the BAO layer later
+ * @deprecated Use Payment.create, which completes the contribution once it is paid.
  *
  * @param array $params
  *   Input parameters.
@@ -590,10 +587,7 @@ function _civicrm_api3_contribution_completetransaction_spec(&$params) {
       'optionGroupName' => 'accept_creditcard',
     ],
   ];
-  // At some point we will deprecate this api in favour of calling payment create which will in turn call this
-  // api if appropriate to transition related entities and send receipts - ie. financial responsibility should
-  // not exist in completetransaction. For now we just need to allow payment.create to force a bypass on the
-  // things it does itself.
+  // Lets a caller that has already recorded the payment skip the financial side.
   $params['is_post_payment_create'] = [
     'title' => 'Is this being called from payment create?',
     'type' => CRM_Utils_Type::T_BOOLEAN,
@@ -738,5 +732,8 @@ function _civicrm_api3_contribution_repeattransaction_spec(&$params) {
  *   Array of deprecated actions
  */
 function _civicrm_api3_contribution_deprecation() {
-  return ['transact' => 'Contribute.transact is ureliable & unsupported - see https://docs.civicrm.org/dev/en/latest/financial/OrderAPI/  for how to move on'];
+  return [
+    'transact' => 'Contribute.transact is ureliable & unsupported - see https://docs.civicrm.org/dev/en/latest/financial/OrderAPI/  for how to move on',
+    'completetransaction' => 'Contribution.completetransaction is deprecated. Record the payment with Payment.create, which completes the contribution once it is paid - see https://docs.civicrm.org/dev/en/latest/financial/OrderAPI/',
+  ];
 }

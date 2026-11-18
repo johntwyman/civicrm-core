@@ -11,6 +11,7 @@
 
 use Civi\Api4\Contact;
 use Civi\Api4\Contribution;
+use Civi\Api4\ContributionProduct;
 use Civi\Api4\LineItem;
 use Civi\Api4\Membership;
 use Civi\Api4\MembershipBlock;
@@ -18,6 +19,7 @@ use Civi\Api4\Pledge;
 use Civi\Api4\PriceFieldValue;
 use Civi\Api4\PriceSet;
 use Civi\Api4\PriceSetEntity;
+use Civi\Api4\Product;
 use Civi\Test\ContributionPageTestTrait;
 use Civi\Test\FormTrait;
 
@@ -235,6 +237,45 @@ class CRM_Contribute_Form_Contribution_ConfirmTest extends CiviUnitTestCase {
       'version' => 3,
     ])['values'][0];
     $this->assertEquals(date('Y-m-d'), substr($payment['trxn_date'], 0, 10));
+  }
+
+  /**
+   * The form must record the payment under the lock a payment processor webhook
+   * takes to record the same charge, so the two can't both record it.
+   */
+  public function testPaymentIsRecordedUnderPaymentCreateLock(): void {
+    $billingLocationTypeID = $this->getLocationTypeID('Billing');
+    $this->createLoggedInUser();
+    $paymentProcessorID = $this->paymentProcessorCreate(['payment_processor_type_id' => 'Dummy', 'is_test' => FALSE], 'dummy');
+    $contributionPageID = $this->createContributionPage(['payment_processor' => $paymentProcessorID]);
+
+    $lockFreeWhenRecorded = NULL;
+    \CRM_Utils_Hook::singleton()->setHook('civicrm_post', function ($op, $objectName, $objectId, &$objectRef) use (&$lockFreeWhenRecorded) {
+      if ($objectName === 'FinancialTrxn' && $op === 'create' && !empty($objectRef->is_payment) && $lockFreeWhenRecorded === NULL) {
+        $contributionID = Contribution::get(FALSE)->addSelect('id')->addOrderBy('id', 'DESC')->execute()->first()['id'];
+        $lockFreeWhenRecorded = (int) \Civi::lockManager()->create('data.contribute.paymentCreate.' . $contributionID)->isFree();
+      }
+    });
+
+    $this->submitOnlineContributionForm([
+      'credit_card_number' => '4111111111111111',
+      'cvv2' => '234',
+      'credit_card_exp_date' => [
+        'M' => 2,
+        'Y' => (int) (CRM_Utils_Time::date('Y')) + 1,
+      ],
+      $this->getPriceFieldLabelForContributionPage($contributionPageID) => 60,
+      'credit_card_type' => 'Visa',
+      "email-$billingLocationTypeID" => 'test@test.com',
+      'payment_processor_id' => $paymentProcessorID,
+    ], $contributionPageID);
+
+    $this->assertSame(0, $lockFreeWhenRecorded, 'The payment should be recorded while holding the payment-create lock');
+    $contribution = Contribution::get(FALSE)
+      ->addWhere('contribution_page_id', '=', $contributionPageID)
+      ->addSelect('contribution_status_id:name')
+      ->execute()->single();
+    $this->assertSame('Completed', $contribution['contribution_status_id:name']);
   }
 
   /**
@@ -865,6 +906,34 @@ class CRM_Contribute_Form_Contribution_ConfirmTest extends CiviUnitTestCase {
       'sku-be-do',
       '.97',
     ]);
+  }
+
+  /**
+   * A premium with a fixed period starts on the configured day of the current year.
+   */
+  public function testSubmitWithFixedPeriodPremium(): void {
+    $this->contributionPageWithPriceSetCreate();
+    Product::update(FALSE)->addWhere('id', '=', $this->ids['Product']['ContributionPage'])
+      ->setValues([
+        'period_type' => 'fixed',
+        'fixed_period_start_day' => 101,
+        'duration_unit' => 'year',
+        'duration_interval' => 1,
+      ])
+      ->execute();
+    $this->submitOnlineContributionForm([
+      'id' => $this->getContributionPageID(),
+      'selectProduct' => $this->ids['Product']['ContributionPage'],
+      'options_' . $this->ids['Product']['ContributionPage'] => 'clumsy smurf',
+      'price_' . $this->ids['PriceField']['radio_field'] => $this->ids['PriceFieldValue']['10_dollars'],
+    ] + $this->getBillingSubmitValues());
+
+    $premium = ContributionProduct::get(FALSE)
+      ->addWhere('contribution_id.contribution_page_id', '=', $this->getContributionPageID())
+      ->execute()->single();
+    $year = (int) date('Y');
+    $this->assertEquals($year . '-01-01', substr($premium['start_date'], 0, 10));
+    $this->assertEquals(($year + 1) . '-01-01', substr($premium['end_date'], 0, 10));
   }
 
   /**
